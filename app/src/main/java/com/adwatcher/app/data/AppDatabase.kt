@@ -25,7 +25,10 @@ data class PopupLog(
     val eventType: String = "POPUP", // "POPUP", "ACTIVITY_CHANGE", or "ATTACK"
     val isSideloaded: Boolean = false,
     val isAttackState: Boolean = false,
-    val installSource: String? = null
+    val installSource: String? = null,
+    val popupText: String? = null,
+    val hasSuspiciousText: Boolean = false,
+    val containsUrl: Boolean = false
 )
 
 @Dao
@@ -40,7 +43,7 @@ interface PopupLogDao {
     suspend fun clearLogs()
 }
 
-@Database(entities = [PopupLog::class], version = 2, exportSchema = false)
+@Database(entities = [PopupLog::class], version = 3, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun popupLogDao(): PopupLogDao
 

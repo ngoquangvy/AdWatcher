@@ -270,8 +270,40 @@ fun LogItemCard(log: PopupLog) {
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Text(
-                                text = "🚨 TẤN CÔNG SPAM",
+                                text = "TẤN CÔNG SPAM",
                                 color = StatusHighRisk,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                    if (log.hasSuspiciousText) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(StatusHighRisk.copy(alpha = 0.15f))
+                                .border(1.dp, StatusHighRisk.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "Text lạ",
+                                color = StatusHighRisk,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                    if (log.containsUrl) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(StatusMediumRisk.copy(alpha = 0.15f))
+                                .border(1.dp, StatusMediumRisk.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "Link lạ",
+                                color = StatusMediumRisk,
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -286,7 +318,7 @@ fun LogItemCard(log: PopupLog) {
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Text(
-                                text = "⚠️ APK ngoài",
+                                text = "APK ngoài",
                                 color = StatusMediumRisk,
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold
@@ -294,6 +326,19 @@ fun LogItemCard(log: PopupLog) {
                         }
                     }
                 }
+            }
+
+            // ── Popup Text Preview ──
+            if (!log.popupText.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = log.popupText,
+                    color = TextSecondary,
+                    fontSize = 11.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    lineHeight = 14.sp
+                )
             }
         }
     }

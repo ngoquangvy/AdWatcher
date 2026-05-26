@@ -1,9 +1,11 @@
 package com.adwatcher.app
 
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Bundle
 import android.provider.Settings
 import android.view.accessibility.AccessibilityManager
@@ -25,6 +27,8 @@ import kotlinx.coroutines.withContext
 class MainActivity : ComponentActivity() {
 
     private val database by lazy { AppDatabase.getDatabase(applicationContext) }
+
+    private lateinit var packageChangeReceiver: BroadcastReceiver
     
     // UI state states
     private var isAccessibilityEnabledState = mutableStateOf(false)
@@ -39,6 +43,8 @@ class MainActivity : ComponentActivity() {
 
         // Scan apps on startup
         triggerAppScan()
+
+        registerPackageChangeReceiver()
 
         setContent {
             AdWatcherTheme {
@@ -70,6 +76,14 @@ class MainActivity : ComponentActivity() {
         checkAccessibilityStatus()
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        try {
+            unregisterReceiver(packageChangeReceiver)
+        } catch (ignored: Exception) {
+        }
+    }
+
     private fun checkAccessibilityStatus() {
         isAccessibilityEnabledState.value = isAccessibilityServiceEnabled()
     }
@@ -93,6 +107,24 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {
             e.printStackTrace()
         }
+    }
+
+    private fun registerPackageChangeReceiver() {
+        packageChangeReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent == null) return
+                val action = intent.action ?: return
+                if (action == Intent.ACTION_PACKAGE_REMOVED || action == Intent.ACTION_PACKAGE_ADDED) {
+                    triggerAppScan()
+                }
+            }
+        }
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_PACKAGE_REMOVED)
+            addAction(Intent.ACTION_PACKAGE_ADDED)
+            addDataScheme("package")
+        }
+        registerReceiver(packageChangeReceiver, filter)
     }
 
     private fun triggerAppScan() {

@@ -12,6 +12,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import java.util.regex.Pattern
 
 /**
  * Background Accessibility Service that monitors window state changes.
@@ -69,9 +70,10 @@ class AdDetectionService : AccessibilityService() {
             return
         }
 
-        // ── Step 2: Filter trusted apps (Google, Samsung, manufacturers, big tech) ──
-        // These apps don't need to be tracked. Only suspicious/unknown apps matter.
-        if (appAnalyzer.isTrustedPackage(packageName)) {
+        // ── Step 2: Filter trusted apps and known installer sources ──
+        // Avoid false positives for apps from official sources like Samsung, Google, or major vendors.
+        val installSource = getInstallSource(packageName)
+        if (appAnalyzer.isTrustedPackage(packageName) || appAnalyzer.isTrustedInstallSource(installSource)) {
             return
         }
 
@@ -89,7 +91,20 @@ class AdDetectionService : AccessibilityService() {
         history.add(currentTimestamp)
         val isSpamAttack = history.size >= 3
 
-        // ── Step 5: Log the suspicious popup event ──
+        // ── Step 5: Extract popup text content ──
+        val popupText = event.text?.joinToString(" ")?.take(200) ?: ""
+        val textLower = popupText.lowercase()
+        val containsUrl = urlPattern.matcher(textLower).find() || textLower.contains("http")
+        val suspiciousKeywords = listOf(
+            "trúng thưởng", "quà tặng", "winner", "prize", "free", "congratulations",
+            "bạn đã trúng", "nhận ngay", "khuyến mãi", "giảm giá", "sale off",
+            "đăng ký", "xác nhận", "otp", "mật khẩu", "password", "verify",
+            "tài khoản", "ngân hàng", "bank", "withdraw", "nạp thẻ",
+            "vip", "lucky", "spin", "jackpot", "xu vàng", "hoàn trả"
+        )
+        val hasSuspiciousText = suspiciousKeywords.any { textLower.contains(it) }
+
+        // ── Step 6: Log the suspicious popup event ──
         serviceScope.launch {
             try {
                 val appInfo = packageManager.getApplicationInfo(packageName, 0)
@@ -100,10 +115,10 @@ class AdDetectionService : AccessibilityService() {
                 // Double-check: if somehow a system app slipped through, skip it
                 if (isSystem) return@launch
 
-                val installSource = getInstallSource(packageName)
-                val isSideloaded = installSource != "com.android.vending" && 
-                                   installSource != "com.amazon.venezia" && 
-                                   installSource != "com.sec.android.app.samsungapps"
+                val appInstallSource = getInstallSource(packageName)
+                val isSideloaded = appInstallSource != "com.android.vending" && 
+                                   appInstallSource != "com.amazon.venezia" && 
+                                   appInstallSource != "com.sec.android.app.samsungapps"
 
                 val log = PopupLog(
                     packageName = packageName,
@@ -113,7 +128,10 @@ class AdDetectionService : AccessibilityService() {
                     eventType = if (isSpamAttack) "ATTACK" else "POPUP",
                     isSideloaded = isSideloaded,
                     isAttackState = isSpamAttack,
-                    installSource = installSource
+                    installSource = appInstallSource,
+                    popupText = popupText.ifEmpty { null },
+                    hasSuspiciousText = hasSuspiciousText,
+                    containsUrl = containsUrl
                 )
 
                 AppDatabase.getDatabase(applicationContext).popupLogDao().insertLog(log)
@@ -127,13 +145,23 @@ class AdDetectionService : AccessibilityService() {
                     eventType = if (isSpamAttack) "ATTACK" else "POPUP",
                     isSideloaded = true,
                     isAttackState = isSpamAttack,
-                    installSource = null
+                    installSource = null,
+                    popupText = popupText.ifEmpty { null },
+                    hasSuspiciousText = hasSuspiciousText,
+                    containsUrl = containsUrl
                 )
                 AppDatabase.getDatabase(applicationContext).popupLogDao().insertLog(log)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
         }
+    }
+
+    companion object {
+        private val urlPattern: Pattern = Pattern.compile(
+            "https?://[\\w.-]+(:\\d+)?(/[\\w./%-]*)?",
+            Pattern.CASE_INSENSITIVE
+        )
     }
 
     private fun getInstallSource(packageName: String): String? {

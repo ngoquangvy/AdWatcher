@@ -3,6 +3,8 @@
 
     <!-- Permission to query all installed packages on Android 11+ -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+    <!-- Required to launch the package uninstall UI on Android 9+ -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
 
     <application
         android:allowBackup="true"

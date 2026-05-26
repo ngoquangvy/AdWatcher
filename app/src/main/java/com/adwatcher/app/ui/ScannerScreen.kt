@@ -320,6 +320,21 @@ fun AppRiskCard(appInfo: AppRiskInfo, onClick: () -> Unit) {
                 if (appInfo.hasOverlayPermission) {
                     StatusBadge("Vẽ đè", StatusMediumRisk)
                 }
+                if (appInfo.hasAccessibilityPermission) {
+                    StatusBadge("Trợ năng", StatusHighRisk)
+                }
+                if (appInfo.hasInstallPermission) {
+                    StatusBadge("Cài đặt", StatusHighRisk)
+                }
+                if (appInfo.hasSmsPermission) {
+                    StatusBadge("SMS", StatusMediumRisk)
+                }
+                if (appInfo.hasNotificationListener) {
+                    StatusBadge("Đọc TB", StatusMediumRisk)
+                }
+                if (appInfo.hasAdSuspiciousPackage) {
+                    StatusBadge("ADS", StatusMediumRisk)
+                }
             }
         }
 
@@ -365,6 +380,7 @@ fun AppDetailDialog(appInfo: AppRiskInfo, onDismiss: () -> Unit) {
             null
         }
     }
+    val canUninstall = !appInfo.isSystemApp
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -435,23 +451,32 @@ fun AppDetailDialog(appInfo: AppRiskInfo, onDismiss: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
+                    val installSourceLabel = when (appInfo.installSource) {
+                        "com.android.vending" -> "Google Play Store ✓"
+                        "com.sec.android.app.samsungapps" -> "Samsung Galaxy Store ✓"
+                        "com.amazon.venezia" -> "Amazon Appstore ✓"
+                        "com.samsung.android.app.omcagent" -> "Samsung Installer (omcagent) ✓"
+                        null -> "Không xác định (Sideloaded)"
+                        else -> appInfo.installSource
+                    }
+                    val installSourceColor = when (appInfo.installSource) {
+                        "com.android.vending",
+                        "com.sec.android.app.samsungapps",
+                        "com.amazon.venezia",
+                        "com.samsung.android.app.omcagent" -> StatusLowRisk
+                        else -> StatusMediumRisk
+                    }
+
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Nguồn cài đặt:", fontSize = 11.sp, color = TextSecondary)
                         Text(
-                            text = when (appInfo.installSource) {
-                                "com.android.vending" -> "Google Play Store ✓"
-                                "com.sec.android.app.samsungapps" -> "Samsung Galaxy Store ✓"
-                                "com.amazon.venezia" -> "Amazon Appstore ✓"
-                                null -> "Không xác định (Sideloaded)"
-                                else -> appInfo.installSource
-                            },
+                            text = installSourceLabel,
                             fontSize = 13.sp,
-                            color = if (appInfo.installSource == "com.android.vending") StatusLowRisk else StatusMediumRisk,
+                            color = installSourceColor,
                             fontWeight = FontWeight.Bold
                         )
                     }
 
-                    // Trust level badge
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(8.dp))
@@ -465,6 +490,66 @@ fun AppDetailDialog(appInfo: AppRiskInfo, onDismiss: () -> Unit) {
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
+                    }
+                }
+
+                // ── Permission Detail Section ──
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "Quyền nguy hiểm (${
+                        listOf(
+                            appInfo.hasOverlayPermission,
+                            appInfo.hasAccessibilityPermission,
+                            appInfo.hasInstallPermission,
+                            appInfo.hasBootPermission,
+                            appInfo.hasSmsPermission,
+                            appInfo.hasNotificationListener,
+                            appInfo.hasQueryAllPackages
+                        ).count { it }
+                    } phát hiện):",
+                    fontSize = 13.sp,
+                    color = TextSecondary,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+
+                val permItems = mutableListOf<Pair<String, Boolean>>()
+                permItems.add("Vẽ đè (SYSTEM_ALERT_WINDOW)" to appInfo.hasOverlayPermission)
+                permItems.add("Trợ năng (BIND_ACCESSIBILITY_SERVICE)" to appInfo.hasAccessibilityPermission)
+                permItems.add("Cài đặt APK (REQUEST_INSTALL_PACKAGES)" to appInfo.hasInstallPermission)
+                permItems.add("Tự khởi chạy (RECEIVE_BOOT_COMPLETED)" to appInfo.hasBootPermission)
+                permItems.add("Đọc SMS (READ_SMS)" to appInfo.hasSmsPermission)
+                permItems.add("Đọc thông báo (BIND_NOTIFICATION_LISTENER)" to appInfo.hasNotificationListener)
+                permItems.add("Xem danh sách app (QUERY_ALL_PACKAGES)" to appInfo.hasQueryAllPackages)
+
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    permItems.forEach { (name, enabled) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (enabled) StatusHighRisk.copy(alpha = 0.08f) else DeepDarkBg)
+                                .border(
+                                    1.dp,
+                                    if (enabled) StatusHighRisk.copy(alpha = 0.2f) else BorderDark,
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(if (enabled) StatusHighRisk else TextSecondary.copy(alpha = 0.3f))
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = name,
+                                color = if (enabled) TextPrimary else TextSecondary.copy(alpha = 0.5f),
+                                fontSize = 12.sp
+                            )
+                        }
                     }
                 }
 
@@ -542,22 +627,44 @@ fun AppDetailDialog(appInfo: AppRiskInfo, onDismiss: () -> Unit) {
         dismissButton = {
             Button(
                 onClick = {
-                    try {
-                        val intent = android.content.Intent(
-                            android.content.Intent.ACTION_DELETE,
-                            android.net.Uri.parse("package:${appInfo.packageName}")
-                        )
-                        intent.flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
-                        context.startActivity(intent)
-                        onDismiss()
-                    } catch (e: Exception) {
-                        e.printStackTrace()
+                    if (canUninstall) {
+                        try {
+                            val uninstallIntent = android.content.Intent(
+                                android.content.Intent.ACTION_UNINSTALL_PACKAGE,
+                                android.net.Uri.parse("package:${appInfo.packageName}")
+                            ).apply {
+                                flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                                putExtra(android.content.Intent.EXTRA_RETURN_RESULT, true)
+                            }
+
+                            val packageManager = context.packageManager
+                            val resolved = uninstallIntent.resolveActivity(packageManager)
+                            if (resolved != null) {
+                                context.startActivity(uninstallIntent)
+                            } else {
+                                val settingsIntent = android.content.Intent(
+                                    android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                    android.net.Uri.parse("package:${appInfo.packageName}")
+                                ).apply {
+                                    flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                                }
+                                context.startActivity(settingsIntent)
+                            }
+                            onDismiss()
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
                     }
                 },
+                enabled = canUninstall,
                 colors = ButtonDefaults.buttonColors(containerColor = StatusHighRisk),
                 shape = RoundedCornerShape(8.dp)
             ) {
-                Text("Gỡ Cài Đặt", color = Color.White, fontWeight = FontWeight.Bold)
+                Text(
+                    if (canUninstall) "Gỡ Cài Đặt" else "Không thể gỡ",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     )
