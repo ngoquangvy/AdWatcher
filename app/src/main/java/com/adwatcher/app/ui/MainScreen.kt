@@ -73,7 +73,7 @@ fun MainScreen(
                 NavigationBarItem(
                     selected = activeTab == ScreenTab.Logs,
                     onClick = { activeTab = ScreenTab.Logs },
-                    icon = { Icon(Icons.Default.List, contentDescription = "Logs") },
+                    icon = { @Suppress("DEPRECATION") Icon(Icons.Filled.List, contentDescription = "Logs") },
                     label = { Text("Lịch sử", fontWeight = FontWeight.Medium) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = ElectricCyan,
@@ -198,16 +198,24 @@ fun PermissionWarningBanner(
 
         Spacer(modifier = Modifier.width(8.dp))
 
-        Button(
-            onClick = onClickActivate,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = StatusHighRisk,
-                contentColor = Color.White
-            ),
-            shape = RoundedCornerShape(10.dp),
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-        ) {
-            Text("BẬT", fontSize = 12.sp, fontWeight = FontWeight.Black)
+        Column(modifier = Modifier.weight(1f)) {
+            Button(
+                onClick = onClickActivate,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = StatusHighRisk,
+                    contentColor = Color.White
+                ),
+                shape = RoundedCornerShape(10.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Text("BẬT", fontSize = 12.sp, fontWeight = FontWeight.Black)
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            TextButton(onClick = onClickGuideTab) {
+                Text("Xem hướng dẫn", color = ElectricCyan, fontSize = 12.sp)
+            }
         }
     }
 }

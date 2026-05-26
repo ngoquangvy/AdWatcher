@@ -92,7 +92,7 @@ class AdDetectionService : AccessibilityService() {
         val isSpamAttack = history.size >= 3
 
         // ── Step 5: Extract popup text content ──
-        val popupText = event.text?.joinToString(" ")?.take(200) ?: ""
+        val popupText = event.text.joinToString(" ").take(200)
         val textLower = popupText.lowercase()
         val containsUrl = urlPattern.matcher(textLower).find() || textLower.contains("http")
         val suspiciousKeywords = listOf(
