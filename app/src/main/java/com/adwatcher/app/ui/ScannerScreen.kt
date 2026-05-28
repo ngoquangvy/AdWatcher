@@ -358,7 +358,7 @@ fun AppRiskCard(
     val appIcon: Drawable? = remember(appInfo.packageName) {
         try {
             context.packageManager.getApplicationIcon(appInfo.packageName)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
         }
     }
@@ -523,7 +523,7 @@ fun AppDetailDialog(appInfo: AppRiskInfo, onDismiss: () -> Unit) {
     val appIcon: Drawable? = remember(appInfo.packageName) {
         try {
             context.packageManager.getApplicationIcon(appInfo.packageName)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
         }
     }

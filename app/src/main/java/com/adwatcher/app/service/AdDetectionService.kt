@@ -214,7 +214,7 @@ class AdDetectionService : AccessibilityService() {
                 )
 
                 AppDatabase.getDatabase(applicationContext).popupLogDao().insertLog(log)
-            } catch (e: PackageManager.NameNotFoundException) {
+            } catch (_: PackageManager.NameNotFoundException) {
                 val prevFg = usageStatsHelper.getForegroundAppPastSeconds(5)
                 val recentApps = usageStatsHelper.getRecentForegroundApps(30).joinToString(", ")
 
