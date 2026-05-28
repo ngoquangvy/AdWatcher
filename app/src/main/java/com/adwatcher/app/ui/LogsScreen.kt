@@ -1,12 +1,14 @@
 package com.adwatcher.app.ui
 
+import android.content.Intent
 import android.graphics.drawable.Drawable
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -15,19 +17,25 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.core.graphics.drawable.toBitmap
+import androidx.core.net.toUri
 import com.adwatcher.app.data.PopupLog
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -40,6 +48,71 @@ fun LogsScreen(
     modifier: Modifier = Modifier
 ) {
     var showClearDialog by remember { mutableStateOf(false) }
+    var selectedPkg by remember { mutableStateOf<String?>(null) }
+    var selectedPkgs by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var uninstallQueue by remember { mutableStateOf<List<String>>(emptyList()) }
+    var isBulkUninstalling by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    val uninstallLauncherHolder = remember { mutableStateOf<androidx.activity.result.ActivityResultLauncher<android.content.Intent>?>(null) }
+
+    fun launchNextUninstall(launcher: androidx.activity.result.ActivityResultLauncher<android.content.Intent>) {
+        if (uninstallQueue.isEmpty()) {
+            isBulkUninstalling = false
+            return
+        }
+        val pkgName = uninstallQueue.first()
+        val intent = android.content.Intent(
+            android.content.Intent.ACTION_DELETE,
+            "package:$pkgName".toUri()
+        ).apply {
+            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+            putExtra(android.content.Intent.EXTRA_RETURN_RESULT, true)
+        }
+        val resolved = intent.resolveActivity(context.packageManager)
+        if (resolved != null) {
+            launcher.launch(intent)
+        } else {
+            val settingsIntent = android.content.Intent(
+                android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                "package:$pkgName".toUri()
+            ).apply { flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK }
+            context.startActivity(settingsIntent)
+            uninstallQueue = uninstallQueue.drop(1)
+            launchNextUninstall(launcher)
+        }
+    }
+
+    val uninstallLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        if (uninstallQueue.size <= 1) {
+            uninstallQueue = emptyList()
+            isBulkUninstalling = false
+        } else {
+            uninstallQueue = uninstallQueue.drop(1)
+            uninstallLauncherHolder.value?.let { launchNextUninstall(it) }
+        }
+    }
+    uninstallLauncherHolder.value = uninstallLauncher
+
+    fun startBulkUninstall() {
+        val pkgs = selectedPkgs.toList()
+        if (pkgs.isEmpty()) return
+        selectedPkgs = emptySet()
+        uninstallQueue = pkgs
+        isBulkUninstalling = true
+        uninstallLauncherHolder.value?.let { launchNextUninstall(it) }
+    }
+
+    val grouped = remember(logs) {
+        logs.groupBy { it.packageName }
+            .mapValues { (_, entries) -> entries.sortedByDescending { it.timestamp } }
+            .entries.sortedByDescending { (_, entries) -> entries.first().timestamp }
+    }
+
+    val totalPopupCount = logs.size
+    val totalAppCount = grouped.size
 
     Column(
         modifier = modifier
@@ -47,7 +120,6 @@ fun LogsScreen(
             .background(DeepDarkBg)
             .padding(horizontal = 16.dp)
     ) {
-        // Screen Header
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -63,7 +135,7 @@ fun LogsScreen(
                     color = TextPrimary
                 )
                 Text(
-                    text = "${logs.size} popup lạ bị bắt (chỉ app không rõ nguồn gốc)",
+                    text = "$totalPopupCount popup từ $totalAppCount ứng dụng",
                     fontSize = 13.sp,
                     color = if (logs.isNotEmpty()) StatusMediumRisk else TextSecondary
                 )
@@ -89,255 +161,441 @@ fun LogsScreen(
         }
 
         if (logs.isEmpty()) {
-            EmptyLogsView()
+            Box(modifier = Modifier.weight(1f)) {
+                EmptyLogsView()
+            }
         } else {
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(bottom = 24.dp)
             ) {
-                items(logs, key = { it.id }) { log ->
-                    LogItemCard(log)
+                items(grouped, key = { it.key }) { (pkg, entries) ->
+                    AppGroupCard(
+                        packageName = pkg,
+                        entries = entries,
+                        isSelected = pkg in selectedPkgs,
+                        onSelectedChange = { checked ->
+                            selectedPkgs = if (checked) selectedPkgs + pkg else selectedPkgs - pkg
+                        },
+                        onClick = { selectedPkg = pkg }
+                    )
+                }
+            }
+        }
+
+        if (selectedPkgs.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(DeepDarkBg)
+                    .border(1.dp, BorderDark, RoundedCornerShape(16.dp))
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "${selectedPkgs.size} app đã chọn",
+                        color = TextPrimary,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp
+                    )
+                    Text(
+                        text = "Hệ thống sẽ yêu cầu xác nhận gỡ cài đặt từng app.",
+                        color = TextSecondary,
+                        fontSize = 11.sp
+                    )
+                }
+                TextButton(
+                    onClick = { selectedPkgs = emptySet() },
+                    colors = ButtonDefaults.textButtonColors(contentColor = ElectricCyan)
+                ) {
+                    Text("Bỏ chọn")
+                }
+                Button(
+                    onClick = { startBulkUninstall() },
+                    enabled = !isBulkUninstalling,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isBulkUninstalling) StatusMediumRisk.copy(alpha = 0.5f) else StatusHighRisk,
+                        contentColor = androidx.compose.ui.graphics.Color.White
+                    )
+                ) {
+                    Text(if (isBulkUninstalling) "Đang gỡ..." else "Gỡ nhiều")
                 }
             }
         }
     }
 
-    // Confirmation Dialog
     if (showClearDialog) {
         AlertDialog(
             onDismissRequest = { showClearDialog = false },
             containerColor = CardDarkBg,
             title = {
-                Text(
-                    "Xóa toàn bộ lịch sử?",
-                    color = TextPrimary,
-                    fontWeight = FontWeight.Bold
-                )
+                Text("Xóa toàn bộ lịch sử?", color = TextPrimary, fontWeight = FontWeight.Bold)
             },
             text = {
-                Text(
-                    "Tất cả nhật ký ghi nhận popup sẽ bị xóa vĩnh viễn và không thể khôi phục.",
-                    color = TextSecondary
-                )
+                Text("Tất cả nhật ký ghi nhận popup sẽ bị xóa vĩnh viễn và không thể khôi phục.", color = TextSecondary)
             },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        onClearLogs()
-                        showClearDialog = false
-                    },
-                    colors = ButtonDefaults.textButtonColors(contentColor = StatusHighRisk)
-                ) {
+                TextButton(onClick = { onClearLogs(); showClearDialog = false },
+                    colors = ButtonDefaults.textButtonColors(contentColor = StatusHighRisk)) {
                     Text("Xóa", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(
-                    onClick = { showClearDialog = false },
-                    colors = ButtonDefaults.textButtonColors(contentColor = TextSecondary)
-                ) {
+                TextButton(onClick = { showClearDialog = false },
+                    colors = ButtonDefaults.textButtonColors(contentColor = TextSecondary)) {
                     Text("Hủy")
                 }
             }
         )
     }
+
+    selectedPkg?.let { pkg ->
+        val entries = grouped.find { it.key == pkg }?.value
+        if (entries != null) {
+            AppDetailDialog(
+                packageName = pkg,
+                entries = entries,
+                onDismiss = { selectedPkg = null },
+                onUninstall = {
+                    val intent = Intent(Intent.ACTION_DELETE, Uri.parse("package:$pkg"))
+                    context.startActivity(intent)
+                }
+            )
+        }
+    }
 }
 
 @Composable
-fun LogItemCard(log: PopupLog) {
+private fun AppGroupCard(
+    packageName: String,
+    entries: List<PopupLog>,
+    isSelected: Boolean,
+    onSelectedChange: (Boolean) -> Unit,
+    onClick: () -> Unit
+) {
     val context = LocalContext.current
-    val appIcon: Drawable? = remember(log.packageName) {
-        try {
-            context.packageManager.getApplicationIcon(log.packageName)
-        } catch (_: Exception) {
-            null
-        }
+    val appEntry = entries.first()
+    val appIcon: Drawable? = remember(packageName) {
+        try { context.packageManager.getApplicationIcon(packageName) } catch (_: Exception) { null }
     }
-
-    val timeFormatted = remember(log.timestamp) {
-        val sdf = SimpleDateFormat("HH:mm:ss - dd/MM", Locale.getDefault())
-        sdf.format(Date(log.timestamp))
+    val lastTime = remember(appEntry.timestamp) {
+        SimpleDateFormat("HH:mm - dd/MM", Locale.getDefault()).format(Date(appEntry.timestamp))
     }
+    val popupCount = entries.size
+    val hasAttack = entries.any { it.isAttackState }
+    val hasSuspicious = entries.any { it.hasSuspiciousText }
+    val hasUrl = entries.any { it.containsUrl }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(CardDarkBg)
-            .border(
-                1.dp, 
-                if (log.isAttackState) StatusHighRisk else BorderDark, 
-                RoundedCornerShape(16.dp)
-            )
+            .border(1.dp, if (hasAttack) StatusHighRisk else BorderDark, RoundedCornerShape(16.dp))
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // App Icon or Fallback
-        Box(
+        Checkbox(
+            checked = isSelected,
+            onCheckedChange = onSelectedChange,
+            modifier = Modifier.padding(end = 8.dp)
+        )
+
+        Row(
             modifier = Modifier
-                .size(46.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(DeepDarkBg),
-            contentAlignment = Alignment.Center
+                .weight(1f)
+                .clickable(onClick = onClick),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            if (appIcon != null) {
-                Image(
-                    bitmap = appIcon.toBitmap().asImageBitmap(),
-                    contentDescription = log.appName,
-                    modifier = Modifier.size(32.dp)
+            Box(
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(DeepDarkBg),
+                contentAlignment = Alignment.Center
+            ) {
+                if (appIcon != null) {
+                    Image(
+                        bitmap = appIcon.toBitmap().asImageBitmap(),
+                        contentDescription = appEntry.appName,
+                        modifier = Modifier.size(32.dp)
+                    )
+                } else {
+                    Icon(Icons.Default.Info, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(24.dp))
+                }
+            }
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = if (popupCount == 1) appEntry.appName else "${popupCount}x ${appEntry.appName}",
+                        color = TextPrimary,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(if (hasAttack) StatusHighRisk else StatusMediumRisk)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = packageName,
+                    color = TextSecondary,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
-            } else {
-                Icon(
-                    imageVector = Icons.Default.Info,
-                    contentDescription = "Unknown",
-                    tint = TextSecondary,
-                    modifier = Modifier.size(24.dp)
-                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Lần cuối: $lastTime",
+                        color = ElectricCyan,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .horizontalScroll(rememberScrollState())
+                    ) {
+                        if (popupCount > 1) {
+                            Badge(text = "$popupCount popup", color = StatusMediumRisk)
+                        }
+                        if (hasAttack) Badge(text = "TẤN CÔNG", color = StatusHighRisk)
+                        if (hasSuspicious) Badge(text = "Text lạ", color = StatusHighRisk)
+                        if (hasUrl) Badge(text = "Link lạ", color = StatusMediumRisk)
+                    }
+                }
             }
         }
+    }
+}
 
-        Spacer(modifier = Modifier.width(16.dp))
+@Composable
+private fun Badge(text: String, color: Color) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(color.copy(alpha = 0.15f))
+            .border(1.dp, color.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
+            .padding(horizontal = 6.dp, vertical = 2.dp)
+    ) {
+        Text(text = text, color = color, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+    }
+}
 
-        // Text details
-        Column(
-            modifier = Modifier.weight(1f)
+@Composable
+private fun AppDetailDialog(
+    packageName: String,
+    entries: List<PopupLog>,
+    onDismiss: () -> Unit,
+    onUninstall: () -> Unit
+) {
+    val context = LocalContext.current
+    val appEntry = entries.first()
+    val appIcon: Drawable? = remember(packageName) {
+        try { context.packageManager.getApplicationIcon(packageName) } catch (_: Exception) { null }
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 16.dp),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = CardDarkBg)
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
+            Column(
+                modifier = Modifier
+                    .padding(24.dp)
+                    .fillMaxWidth()
             ) {
-                Text(
-                    text = log.appName,
-                    color = TextPrimary,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false)
-                )
-
-                // Custom Status Dot
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(
-                            when {
-                                log.isAttackState -> StatusHighRisk
-                                log.isSideloaded -> StatusMediumRisk
-                                log.isSystemApp -> TextSecondary
-                                else -> StatusHighRisk
-                            }
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(DeepDarkBg),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (appIcon != null) {
+                        Image(
+                            bitmap = appIcon.toBitmap().asImageBitmap(),
+                            contentDescription = appEntry.appName,
+                            modifier = Modifier.size(36.dp)
                         )
-                )
+                    } else {
+                        Icon(Icons.Default.Info, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(28.dp))
+                    }
+                }
+                Spacer(modifier = Modifier.width(16.dp))
+                Column {
+                    Text(
+                        text = appEntry.appName,
+                        color = TextPrimary,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = packageName,
+                        color = TextSecondary,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "${entries.size} popup được ghi nhận",
+                        color = StatusMediumRisk,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+            HorizontalDivider(color = BorderDark)
+            Spacer(modifier = Modifier.height(12.dp))
 
             Text(
-                text = log.packageName,
-                color = TextSecondary,
-                fontSize = 12.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                text = "Lịch sử popup",
+                color = TextPrimary,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold
             )
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(8.dp))
+
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 300.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(entries, key = { it.id }) { log ->
+                    DetailLogRow(log)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+            HorizontalDivider(color = BorderDark)
+            Spacer(modifier = Modifier.height(12.dp))
 
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TextSecondary),
+                    border = ButtonDefaults.outlinedButtonBorder.copy(
+                        brush = SolidColor(BorderDark)
+                    )
+                ) {
+                    Text("Đóng")
+                }
+                Button(
+                    onClick = onUninstall,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = StatusHighRisk)
+                ) {
+                    Text("Gỡ cài đặt")
+                }
+            }
+        }
+    }
+    }
+}
+
+@Composable
+private fun DetailLogRow(log: PopupLog) {
+    val timeFormatted = remember(log.timestamp) {
+        SimpleDateFormat("HH:mm:ss - dd/MM", Locale.getDefault()).format(Date(log.timestamp))
+    }
+    val detectionLabel = remember(log.detectionMethod) {
+        when (log.detectionMethod) {
+            "WINDOW_STATE_CHANGED" -> "State change"
+            "WINDOWS_CHANGED" -> "Windows change"
+            "OVERLAY_APPLICATION" -> "Overlay app"
+            "OVERLAY_LEGACY_ALERT" -> "Alert overlay"
+            "OVERLAY_LEGACY_OVERLAY" -> "System overlay"
+            "OVERLAY_UNKNOWN" -> "Overlay ?"
+            else -> log.detectionMethod ?: "Auto"
+        }
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(DeepDarkBg)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = timeFormatted,
                     color = ElectricCyan,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Medium
                 )
-
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    if (log.isAttackState) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(StatusHighRisk.copy(alpha = 0.15f))
-                                .border(1.dp, StatusHighRisk.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = "TẤN CÔNG SPAM",
-                                color = StatusHighRisk,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                    if (log.hasSuspiciousText) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(StatusHighRisk.copy(alpha = 0.15f))
-                                .border(1.dp, StatusHighRisk.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = "Text lạ",
-                                color = StatusHighRisk,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                    if (log.containsUrl) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(StatusMediumRisk.copy(alpha = 0.15f))
-                                .border(1.dp, StatusMediumRisk.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = "Link lạ",
-                                color = StatusMediumRisk,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                    if (log.isSideloaded) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(StatusMediumRisk.copy(alpha = 0.15f))
-                                .border(1.dp, StatusMediumRisk.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = "APK ngoài",
-                                color = StatusMediumRisk,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
+                Spacer(modifier = Modifier.width(8.dp))
+                Badge(text = log.eventType, color = when {
+                    log.eventType == "ATTACK" || log.eventType == "HIGH_FREQ" -> StatusHighRisk
+                    log.eventType == "OVERLAY_FULL" -> StatusMediumRisk
+                    else -> TextSecondary
+                })
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.horizontalScroll(rememberScrollState())
+            ) {
+                Badge(text = detectionLabel, color = NeonPurple)
+                if (log.hasSuspiciousText) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Badge(text = "Text lạ", color = StatusHighRisk)
+                }
+                if (log.containsUrl) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Badge(text = "Link lạ", color = StatusMediumRisk)
                 }
             }
-
-            // ── Popup Text Preview ──
             if (!log.popupText.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = log.popupText,
                     color = TextSecondary,
                     fontSize = 11.sp,
                     maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    lineHeight = 14.sp
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -348,8 +606,7 @@ fun LogItemCard(log: PopupLog) {
 fun EmptyLogsView() {
     Box(
         modifier = Modifier
-            .fillMaxSize()
-            .padding(bottom = 60.dp),
+            .fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -361,7 +618,6 @@ fun EmptyLogsView() {
                 .border(1.dp, BorderDark, RoundedCornerShape(24.dp))
                 .padding(32.dp)
         ) {
-            // Scanner Animation Radar style
             Box(
                 modifier = Modifier
                     .size(80.dp)
@@ -393,7 +649,7 @@ fun EmptyLogsView() {
                 color = TextSecondary,
                 fontSize = 13.sp,
                 lineHeight = 18.sp,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                textAlign = TextAlign.Center
             )
         }
     }

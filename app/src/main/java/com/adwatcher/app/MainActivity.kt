@@ -133,7 +133,9 @@ class MainActivity : ComponentActivity() {
         isScanningState.value = true
         lifecycleScope.launch(Dispatchers.Default) {
             val analyzer = AppAnalyzer(applicationContext)
-            val results = analyzer.scanInstalledApps()
+            val popupCounts = database.popupLogDao().getPopupCounts()
+                .associate { it.packageName to it.cnt }
+            val results = analyzer.scanInstalledApps(popupCounts = popupCounts)
             
             withContext(Dispatchers.Main) {
                 appsListState.clear()

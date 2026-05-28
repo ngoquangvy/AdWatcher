@@ -5,6 +5,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -13,9 +15,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.core.net.toUri
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,6 +60,39 @@ fun ScannerScreen(
         appsList.filter { it.packageName in selectedPackageNames }
     }
 
+    val uninstallLauncherHolder = remember { mutableStateOf<androidx.activity.result.ActivityResultLauncher<android.content.Intent>?>(null) }
+
+    fun launchNextUninstall(launcher: androidx.activity.result.ActivityResultLauncher<android.content.Intent>) {
+        if (uninstallQueue.isEmpty()) {
+            isBulkUninstalling = false
+            return
+        }
+
+        val packageName = uninstallQueue.first()
+        val uninstallIntent = android.content.Intent(
+            android.content.Intent.ACTION_DELETE,
+            "package:$packageName".toUri()
+        ).apply {
+            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+            putExtra(android.content.Intent.EXTRA_RETURN_RESULT, true)
+        }
+
+        val resolved = uninstallIntent.resolveActivity(context.packageManager)
+        if (resolved != null) {
+            launcher.launch(uninstallIntent)
+        } else {
+            val settingsIntent = android.content.Intent(
+                android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                "package:$packageName".toUri()
+            ).apply {
+                flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(settingsIntent)
+            uninstallQueue = uninstallQueue.drop(1)
+            launchNextUninstall(launcher)
+        }
+    }
+
     val uninstallLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) {
@@ -64,41 +101,10 @@ fun ScannerScreen(
             isBulkUninstalling = false
         } else {
             uninstallQueue = uninstallQueue.drop(1)
-            launchNextUninstall()
+            uninstallLauncherHolder.value?.let { launchNextUninstall(it) }
         }
     }
-
-    fun launchNextUninstall() {
-        if (uninstallQueue.isEmpty()) {
-            isBulkUninstalling = false
-            return
-        }
-
-        val packageName = uninstallQueue.first()
-        val uninstallIntent = android.content.Intent(
-            android.content.Intent.ACTION_UNINSTALL_PACKAGE,
-            android.net.Uri.parse("package:$packageName")
-        ).apply {
-            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
-            putExtra(android.content.Intent.EXTRA_RETURN_RESULT, true)
-        }
-
-        val packageManager = context.packageManager
-        val resolved = uninstallIntent.resolveActivity(packageManager)
-        if (resolved != null) {
-            uninstallLauncher.launch(uninstallIntent)
-        } else {
-            val settingsIntent = android.content.Intent(
-                android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                android.net.Uri.parse("package:$packageName")
-            ).apply {
-                flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
-            }
-            context.startActivity(settingsIntent)
-            uninstallQueue = uninstallQueue.drop(1)
-            launchNextUninstall()
-        }
-    }
+    uninstallLauncherHolder.value = uninstallLauncher
 
     fun startBulkUninstall() {
         val uninstallable = selectedApps.filter { it.canUninstall }.map { it.packageName }
@@ -107,7 +113,7 @@ fun ScannerScreen(
         selectedPackageNames = emptySet()
         uninstallQueue = uninstallable
         isBulkUninstalling = true
-        launchNextUninstall()
+        uninstallLauncherHolder.value?.let { launchNextUninstall(it) }
     }
 
     Column(
@@ -154,18 +160,7 @@ fun ScannerScreen(
         // Risk Summary Dashboard Card
         RiskSummaryCard(highRiskCount, mediumRiskCount)
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Explanation text
-        Text(
-            text = "Chỉ hiển thị app không thuộc hệ thống, không phải của Google, Samsung hay các hãng lớn. Nhấp vào app để xem chi tiết.",
-            fontSize = 11.sp,
-            color = TextSecondary,
-            lineHeight = 15.sp,
-            modifier = Modifier.padding(vertical = 8.dp)
-        )
-
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         if (selectedPackageNames.isNotEmpty()) {
             Row(
@@ -444,7 +439,10 @@ fun AppRiskCard(
                     )
 
                     Spacer(modifier = Modifier.height(6.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
                         if (appInfo.isFakeSystemApp) {
                             StatusBadge("Giả mạo", StatusHighRisk)
                         }
@@ -471,6 +469,17 @@ fun AppRiskCard(
                         }
                         if (appInfo.hasAdSuspiciousPackage) {
                             StatusBadge("ADS", StatusMediumRisk)
+                        }
+                        if (appInfo.isActiveAdmin) {
+                            StatusBadge("Quản trị", StatusHighRisk)
+                        } else if (appInfo.hasDeviceAdminPermission) {
+                            StatusBadge("Quyền QT", StatusMediumRisk)
+                        }
+                        if (appInfo.hasUsageStatsPermission) {
+                            StatusBadge("Theo dõi", StatusMediumRisk)
+                        }
+                        if (appInfo.isRecentlyInstalled) {
+                            StatusBadge("Mới cài", StatusMediumRisk)
                         }
                     }
                 }
@@ -642,7 +651,9 @@ fun AppDetailDialog(appInfo: AppRiskInfo, onDismiss: () -> Unit) {
                             appInfo.hasBootPermission,
                             appInfo.hasSmsPermission,
                             appInfo.hasNotificationListener,
-                            appInfo.hasQueryAllPackages
+                            appInfo.hasQueryAllPackages,
+                            appInfo.hasDeviceAdminPermission,
+                            appInfo.hasUsageStatsPermission
                         ).count { it }
                     } phát hiện):",
                     fontSize = 13.sp,
@@ -659,6 +670,8 @@ fun AppDetailDialog(appInfo: AppRiskInfo, onDismiss: () -> Unit) {
                 permItems.add("Đọc SMS (READ_SMS)" to appInfo.hasSmsPermission)
                 permItems.add("Đọc thông báo (BIND_NOTIFICATION_LISTENER)" to appInfo.hasNotificationListener)
                 permItems.add("Xem danh sách app (QUERY_ALL_PACKAGES)" to appInfo.hasQueryAllPackages)
+                permItems.add("Quản trị thiết bị (BIND_DEVICE_ADMIN)" to appInfo.hasDeviceAdminPermission)
+                permItems.add("Truy cập dữ liệu sử dụng (PACKAGE_USAGE_STATS)" to appInfo.hasUsageStatsPermission)
 
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     permItems.forEach { (name, enabled) ->
@@ -768,21 +781,20 @@ fun AppDetailDialog(appInfo: AppRiskInfo, onDismiss: () -> Unit) {
                     if (canUninstall) {
                         try {
                             val uninstallIntent = android.content.Intent(
-                                android.content.Intent.ACTION_UNINSTALL_PACKAGE,
-                                android.net.Uri.parse("package:${appInfo.packageName}")
+                                android.content.Intent.ACTION_DELETE,
+                                "package:${appInfo.packageName}".toUri()
                             ).apply {
                                 flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
                                 putExtra(android.content.Intent.EXTRA_RETURN_RESULT, true)
                             }
 
-                            val packageManager = context.packageManager
-                            val resolved = uninstallIntent.resolveActivity(packageManager)
+                            val resolved = uninstallIntent.resolveActivity(context.packageManager)
                             if (resolved != null) {
                                 context.startActivity(uninstallIntent)
                             } else {
                                 val settingsIntent = android.content.Intent(
                                     android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                    android.net.Uri.parse("package:${appInfo.packageName}")
+                                    "package:${appInfo.packageName}".toUri()
                                 ).apply {
                                     flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
                                 }

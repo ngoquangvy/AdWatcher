@@ -6,6 +6,7 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Build
 
+
 /**
  * Represents the analysis result for a single installed app.
  * isTrusted = true means the app belongs to a known manufacturer, big tech company, or system.
@@ -34,7 +35,11 @@ data class AppRiskInfo(
     val hasNotificationListener: Boolean,
     val hasQueryAllPackages: Boolean,
     val totalDangerousPermissions: Int,
-    val hasAdSuspiciousPackage: Boolean
+    val hasAdSuspiciousPackage: Boolean,
+    val hasDeviceAdminPermission: Boolean,
+    val isActiveAdmin: Boolean,
+    val hasUsageStatsPermission: Boolean,
+    val isRecentlyInstalled: Boolean
 )
 
 enum class RiskLevel {
@@ -171,7 +176,10 @@ class AppAnalyzer(private val context: Context) {
      *
      * @param includeAllApps If true, returns all apps including trusted ones (for debugging).
      */
-    fun scanInstalledApps(includeAllApps: Boolean = false): List<AppRiskInfo> {
+    fun scanInstalledApps(includeAllApps: Boolean = false, popupCounts: Map<String, Int> = emptyMap()): List<AppRiskInfo> {
+        val devicePolicyManager = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as? android.app.admin.DevicePolicyManager
+        val activeAdmins = devicePolicyManager?.activeAdmins?.map { it.packageName } ?: emptyList()
+
         val installedApps = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             packageManager.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(PackageManager.GET_META_DATA.toLong()))
         } else {
@@ -189,11 +197,13 @@ class AppAnalyzer(private val context: Context) {
             val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0 || 
                            (appInfo.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
 
-            val isTrusted = isSystem || isTrustedPackage(packageName)
+            val isTrustedPrefix = isTrustedPackage(packageName)
+            val isTrusted = isSystem || isTrustedPrefix
             val canUninstall = !isSystem
 
-            // Skip trusted apps entirely unless caller explicitly wants all
-            if (!includeAllApps && (isTrusted || !canUninstall)) continue
+            // Skip ONLY if it's a System app (cannot be uninstalled) AND we don't want all apps.
+            // This allows us to scan trusted Play Store apps but assign them lower risk scores.
+            if (!includeAllApps && !canUninstall) continue
 
             // ── Permission Analysis ──
             val permissions = getAppPermissions(packageName)
@@ -206,10 +216,21 @@ class AppAnalyzer(private val context: Context) {
             val hasNotificationListener = permissions.contains("android.permission.BIND_NOTIFICATION_LISTENER_SERVICE")
             val hasQueryAll = permissions.contains("android.permission.QUERY_ALL_PACKAGES")
             val hasInternet = permissions.contains("android.permission.INTERNET")
+            val hasDeviceAdmin = permissions.contains("android.permission.BIND_DEVICE_ADMIN")
+            val hasUsageStats = permissions.contains("android.permission.PACKAGE_USAGE_STATS")
+
+            val isActiveAdmin = activeAdmins.contains(packageName)
 
             // Count dangerous permissions (exclude INTERNET as it's too common)
-            val dangerousPerms = listOf(hasOverlay, hasBoot, hasAccessibility, hasInstall, hasSms, hasNotificationListener, hasQueryAll)
+            val dangerousPerms = listOf(hasOverlay, hasBoot, hasAccessibility, hasInstall, hasSms, hasNotificationListener, hasQueryAll, hasDeviceAdmin, hasUsageStats)
             val totalDangerous = dangerousPerms.count { it }
+
+            // Total permission count (including normal ones) — high count = aggressive
+            val totalPermissionCount = permissions.size
+
+            // ── Install Time ──
+            val installTime = getInstallTime(packageName)
+            val isRecentlyInstalled = installTime > 0 && (System.currentTimeMillis() - installTime) < 48 * 60 * 60 * 1000L
 
             // ── Launcher Visibility ──
             val hasNoLauncher = packageManager.getLaunchIntentForPackage(packageName) == null
@@ -253,11 +274,23 @@ class AppAnalyzer(private val context: Context) {
             val isSideloaded = !isSystem && !isTrustedInstallSource(installSource)
             val isBrandMimicWithBadSource = (isSuspiciousBrandLabel || isSuspiciousBrandPackage) && !isTrustedInstallSource(installSource)
 
-            val isWhitelisted = isTrusted
+            val isWhitelisted = isTrustedPrefix
+
+            // ── Soft Whitelist for Overlay ──
+            val softWhitelist = listOf("com.facebook.orca", "com.zing.zalo", "com.viber.voip", "com.skype.raider")
+            val isSoftWhitelisted = softWhitelist.contains(packageName)
 
             // ── Risk Score Calculation ──
             var score = 0
             val reasons = mutableListOf<String>()
+
+            // Reduce score for official play store apps, but don't ignore them
+            if (!isSideloaded && installSource == "com.android.vending") {
+                score -= 10
+            }
+            if (isWhitelisted) {
+                score -= 20
+            }
 
             if (isFakeSystem) {
                 score += 45
@@ -285,8 +318,8 @@ class AppAnalyzer(private val context: Context) {
                 reasons.add("Quyền cài đặt ứng dụng: Có thể tự động tải và cài đặt APK khác mà người dùng không biết.")
             }
             if (hasNoLauncher) {
-                score += 25
-                reasons.add("Ẩn icon: Không xuất hiện trong danh sách ứng dụng, người dùng rất khó phát hiện và gỡ cài đặt.")
+                score += 40
+                reasons.add("Không có icon: Cố tình ẩn mình khỏi màn hình chính, đặc điểm chung của Adware.")
             }
             if (isSideloaded) {
                 score += 20
@@ -311,6 +344,63 @@ class AppAnalyzer(private val context: Context) {
             if (isAdSuspiciousPackage) {
                 score += 15
                 reasons.add("Tên package đáng ngờ: Chứa từ khóa liên quan đến quảng cáo/SDK không rõ nguồn gốc.")
+            }
+
+            // New scores
+            if (hasUsageStats) {
+                score += 20
+                reasons.add("Quyền truy cập dữ liệu sử dụng: Có thể theo dõi bạn đang mở app nào để hiển thị quảng cáo mục tiêu.")
+            }
+            if (hasDeviceAdmin) {
+                score += 20
+                reasons.add("Quyền Quản trị thiết bị: Rất khó gỡ cài đặt nếu được kích hoạt.")
+            }
+            if (isActiveAdmin) {
+                score += 30
+                reasons.add("Đang là Quản trị thiết bị: Ứng dụng này đang nắm quyền cao nhất, bạn cần hủy cấp quyền trước khi gỡ.")
+            }
+            if (isRecentlyInstalled) {
+                score += 15
+                reasons.add("Mới cài đặt: Ứng dụng vừa được cài trong vòng 48h, có khả năng là nguyên nhân gây ra popup gần đây.")
+            }
+
+            // ── Behavioral Heuristics (no-permission adware detection) ──
+            // Apps can show ads with ONLY internet — no dangerous permissions needed.
+            // These heuristics detect indicators of adware behavior even without dangerous perms.
+            if (totalPermissionCount > 15) {
+                score += 8
+                reasons.add("Số lượng quyền cao: Yêu cầu $totalPermissionCount quyền khác nhau, có dấu hiệu thu thập dữ liệu quá mức.")
+            }
+            if (hasInternet && hasBoot && !isTrustedPrefix) {
+                score += 8
+                reasons.add("Internet + Tự khởi chạy: Có thể kết nối mạng ngay sau khi máy khởi động để tải quảng cáo về.")
+            }
+            if (hasInternet && hasUsageStats) {
+                score += 10
+                reasons.add("Internet + Theo dõi app: Có thể theo dõi bạn đang dùng app gì để hiển thị quảng cáo nhắm mục tiêu.")
+            }
+            if (hasInternet && isRecentlyInstalled) {
+                score += 8
+                reasons.add("Internet + Mới cài: Vừa cài xong đã có khả năng kết nối mạng — cần chú ý nếu gần đây có popup lạ.")
+            }
+            if (hasNoLauncher && hasInternet) {
+                score += 10
+                reasons.add("Không icon + Internet: Có thể chạy ngầm và tải nội dung quảng cáo mà người dùng không biết.")
+            }
+
+            // ── Popup Frequency Scoring ──
+            // Apps with detected popup logs get extra score based on count
+            val popupCount = popupCounts[packageName] ?: 0
+            if (popupCount > 0) {
+                val popupScore = minOf(popupCount * 3, 25)
+                score += popupScore
+                reasons.add("Phát hiện $popupCount popup quảng cáo: Popup xuất hiện $popupCount lần từ ứng dụng này, có biểu hiện của Adware hiển thị quảng cáo.")
+            }
+
+            // Soft whitelist reduction
+            if (isSoftWhitelisted && hasOverlay) {
+                score -= 30
+                reasons.add("Ứng dụng phổ biến (Zalo/Messenger): Thường xuyên dùng quyền vẽ đè hợp lệ.")
             }
 
             // ── Permission Synergy Scoring (dangerous combinations) ──
@@ -339,8 +429,8 @@ class AppAnalyzer(private val context: Context) {
                 reasons.add("Tích lũy nhiều quyền nguy hiểm: Ứng dụng yêu cầu $totalDangerous quyền nhạy cảm khác nhau.")
             }
 
-            // Cap score at 100
-            score = score.coerceAtMost(100)
+            // Cap score between 0 and 100
+            score = score.coerceIn(0, 100)
 
             val riskLevel = when {
                 score >= 60 -> RiskLevel.HIGH
@@ -371,7 +461,11 @@ class AppAnalyzer(private val context: Context) {
                     hasNotificationListener = hasNotificationListener,
                     hasQueryAllPackages = hasQueryAll,
                     totalDangerousPermissions = totalDangerous,
-                    hasAdSuspiciousPackage = isAdSuspiciousPackage
+                    hasAdSuspiciousPackage = isAdSuspiciousPackage,
+                    hasDeviceAdminPermission = hasDeviceAdmin,
+                    isActiveAdmin = isActiveAdmin,
+                    hasUsageStatsPermission = hasUsageStats,
+                    isRecentlyInstalled = isRecentlyInstalled
                 )
             )
         }
@@ -406,6 +500,15 @@ class AppAnalyzer(private val context: Context) {
             packageInfo.requestedPermissions?.toList() ?: emptyList()
         } catch (_: PackageManager.NameNotFoundException) {
             emptyList()
+        }
+    }
+
+    private fun getInstallTime(packageName: String): Long {
+        return try {
+            val packageInfo = packageManager.getPackageInfo(packageName, 0)
+            packageInfo.firstInstallTime
+        } catch (_: Exception) {
+            0L
         }
     }
 }
