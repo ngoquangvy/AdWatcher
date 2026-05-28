@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -43,11 +44,71 @@ fun ScannerScreen(
     modifier: Modifier = Modifier
 ) {
     var selectedAppForDetail by remember { mutableStateOf<AppRiskInfo?>(null) }
-    val selectedPackageNames = remember { mutableStateListOf<String>() }
-    val context = LocalContext.current
+    var selectedPackageNames by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var uninstallQueue by remember { mutableStateOf<List<String>>(emptyList()) }
+    var isBulkUninstalling by remember { mutableStateOf(false) }
 
     val highRiskCount = remember(appsList) { appsList.count { it.riskLevel == RiskLevel.HIGH } }
     val mediumRiskCount = remember(appsList) { appsList.count { it.riskLevel == RiskLevel.MEDIUM } }
+
+    val context = LocalContext.current
+    val selectedApps = remember(appsList, selectedPackageNames) {
+        appsList.filter { it.packageName in selectedPackageNames }
+    }
+
+    val uninstallLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        if (uninstallQueue.size <= 1) {
+            uninstallQueue = emptyList()
+            isBulkUninstalling = false
+        } else {
+            uninstallQueue = uninstallQueue.drop(1)
+            launchNextUninstall()
+        }
+    }
+
+    fun launchNextUninstall() {
+        if (uninstallQueue.isEmpty()) {
+            isBulkUninstalling = false
+            return
+        }
+
+        val packageName = uninstallQueue.first()
+        val uninstallIntent = android.content.Intent(
+            android.content.Intent.ACTION_UNINSTALL_PACKAGE,
+            android.net.Uri.parse("package:$packageName")
+        ).apply {
+            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+            putExtra(android.content.Intent.EXTRA_RETURN_RESULT, true)
+        }
+
+        val packageManager = context.packageManager
+        val resolved = uninstallIntent.resolveActivity(packageManager)
+        if (resolved != null) {
+            uninstallLauncher.launch(uninstallIntent)
+        } else {
+            val settingsIntent = android.content.Intent(
+                android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                android.net.Uri.parse("package:$packageName")
+            ).apply {
+                flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(settingsIntent)
+            uninstallQueue = uninstallQueue.drop(1)
+            launchNextUninstall()
+        }
+    }
+
+    fun startBulkUninstall() {
+        val uninstallable = selectedApps.filter { it.canUninstall }.map { it.packageName }
+        if (uninstallable.isEmpty()) return
+
+        selectedPackageNames = emptySet()
+        uninstallQueue = uninstallable
+        isBulkUninstalling = true
+        launchNextUninstall()
+    }
 
     Column(
         modifier = modifier
@@ -106,66 +167,51 @@ fun ScannerScreen(
 
         Spacer(modifier = Modifier.height(4.dp))
 
-        if (appsList.isNotEmpty()) {
+        if (selectedPackageNames.isNotEmpty()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(DeepDarkBg)
+                    .border(1.dp, BorderDark, RoundedCornerShape(16.dp))
+                    .padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = if (selectedPackageNames.isEmpty()) "Chạm vào ô để chọn nhiều app" else "${selectedPackageNames.size} app đã chọn",
-                    fontSize = 12.sp,
-                    color = TextSecondary
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "${selectedPackageNames.size} app đã chọn",
+                        color = TextPrimary,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp
+                    )
+                    Text(
+                        text = "Hệ thống sẽ yêu cầu xác nhận gỡ cài đặt từng app.",
+                        color = TextSecondary,
+                        fontSize = 11.sp
+                    )
+                }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = {
-                        if (selectedPackageNames.isEmpty()) {
-                            selectedPackageNames.clear()
-                            selectedPackageNames.addAll(appsList.map { it.packageName })
-                        } else {
-                            selectedPackageNames.clear()
-                        }
-                    }) {
-                        Text(
-                            text = if (selectedPackageNames.isEmpty()) "Chọn tất cả" else "Bỏ chọn",
-                            color = ElectricCyan,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                TextButton(
+                    onClick = { selectedPackageNames = emptySet() },
+                    colors = ButtonDefaults.textButtonColors(contentColor = ElectricCyan)
+                ) {
+                    Text("Bỏ chọn")
+                }
 
-                    if (selectedPackageNames.isNotEmpty()) {
-                        Button(
-                            onClick = {
-                                val packagesToUninstall = selectedPackageNames.toList()
-                                selectedPackageNames.clear()
-                                packagesToUninstall.forEach { packageName ->
-                                    val uninstallIntent = android.content.Intent(
-                                        android.content.Intent.ACTION_DELETE,
-                                        android.net.Uri.parse("package:$packageName")
-                                    ).apply {
-                                        flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
-                                        putExtra(android.content.Intent.EXTRA_RETURN_RESULT, true)
-                                    }
-                                    val resolved = uninstallIntent.resolveActivity(context.packageManager)
-                                    if (resolved != null) {
-                                        context.startActivity(uninstallIntent)
-                                    }
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = StatusHighRisk,
-                                contentColor = Color.White
-                            ),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text("Gỡ ${selectedPackageNames.size} đã chọn", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
+                Button(
+                    onClick = { startBulkUninstall() },
+                    enabled = !isBulkUninstalling,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isBulkUninstalling) StatusMediumRisk.copy(alpha = 0.5f) else StatusHighRisk,
+                        contentColor = Color.White
+                    )
+                ) {
+                    Text(if (isBulkUninstalling) "Đang gỡ..." else "Gỡ nhiều")
                 }
             }
+
+            Spacer(modifier = Modifier.height(8.dp))
         }
 
         if (isScanning) {
@@ -220,13 +266,11 @@ fun ScannerScreen(
                     AppRiskCard(
                         appInfo = appInfo,
                         isSelected = selectedPackageNames.contains(appInfo.packageName),
-                        onSelectChanged = { selected ->
-                            if (selected) {
-                                if (!selectedPackageNames.contains(appInfo.packageName)) {
-                                    selectedPackageNames.add(appInfo.packageName)
-                                }
+                        onSelectedChange = { checked ->
+                            selectedPackageNames = if (checked) {
+                                selectedPackageNames + appInfo.packageName
                             } else {
-                                selectedPackageNames.remove(appInfo.packageName)
+                                selectedPackageNames - appInfo.packageName
                             }
                         },
                         onClick = { selectedAppForDetail = appInfo }
@@ -312,7 +356,7 @@ fun RiskStatBadge(label: String, count: Int, color: Color) {
 fun AppRiskCard(
     appInfo: AppRiskInfo,
     isSelected: Boolean,
-    onSelectChanged: (Boolean) -> Unit,
+    onSelectedChange: (Boolean) -> Unit,
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
@@ -340,98 +384,101 @@ fun AppRiskCard(
                 if (appInfo.riskLevel == RiskLevel.HIGH) StatusHighRisk.copy(alpha = 0.3f) else BorderDark, 
                 RoundedCornerShape(16.dp)
             )
-            .clickable(onClick = onClick)
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Checkbox(
             checked = isSelected,
-            onCheckedChange = onSelectChanged,
-            colors = CheckboxDefaults.colors(
-                checkedColor = ElectricCyan,
-                uncheckedColor = TextSecondary
-            )
+            onCheckedChange = if (appInfo.canUninstall) onSelectedChange else null,
+            enabled = appInfo.canUninstall,
+            modifier = Modifier.padding(end = 8.dp)
         )
-        Spacer(modifier = Modifier.width(12.dp))
-        Box(
+
+        Column(
             modifier = Modifier
-                .size(46.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(DeepDarkBg),
-            contentAlignment = Alignment.Center
+                .weight(1f)
+                .clickable(onClick = onClick)
         ) {
-            if (appIcon != null) {
-                Image(
-                    bitmap = appIcon.toBitmap().asImageBitmap(),
-                    contentDescription = appInfo.appName,
-                    modifier = Modifier.size(32.dp)
-                )
-            } else {
-                Icon(
-                    imageVector = Icons.Default.Info,
-                    contentDescription = "App Icon",
-                    tint = TextSecondary,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-        }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(46.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(DeepDarkBg),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (appIcon != null) {
+                        Image(
+                            bitmap = appIcon.toBitmap().asImageBitmap(),
+                            contentDescription = appInfo.appName,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = "App Icon",
+                            tint = TextSecondary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
 
-        Spacer(modifier = Modifier.width(16.dp))
+                Spacer(modifier = Modifier.width(16.dp))
 
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = appInfo.appName,
-                color = TextPrimary,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = appInfo.packageName,
-                color = TextSecondary,
-                fontSize = 12.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = appInfo.appName,
+                        color = TextPrimary,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = appInfo.packageName,
+                        color = TextSecondary,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
 
-            // Status badges row
-            Spacer(modifier = Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (appInfo.isFakeSystemApp) {
-                    StatusBadge("Giả mạo", StatusHighRisk)
-                }
-                if (appInfo.isSideloaded) {
-                    StatusBadge("APK ngoài", StatusMediumRisk)
-                }
-                if (appInfo.hasNoLauncher) {
-                    StatusBadge("Ẩn icon", StatusHighRisk)
-                }
-                if (appInfo.hasOverlayPermission) {
-                    StatusBadge("Vẽ đè", StatusMediumRisk)
-                }
-                if (appInfo.hasAccessibilityPermission) {
-                    StatusBadge("Trợ năng", StatusHighRisk)
-                }
-                if (appInfo.hasInstallPermission) {
-                    StatusBadge("Cài đặt", StatusHighRisk)
-                }
-                if (appInfo.hasSmsPermission) {
-                    StatusBadge("SMS", StatusMediumRisk)
-                }
-                if (appInfo.hasNotificationListener) {
-                    StatusBadge("Đọc TB", StatusMediumRisk)
-                }
-                if (appInfo.hasAdSuspiciousPackage) {
-                    StatusBadge("ADS", StatusMediumRisk)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (appInfo.isFakeSystemApp) {
+                            StatusBadge("Giả mạo", StatusHighRisk)
+                        }
+                        if (appInfo.isSideloaded) {
+                            StatusBadge("APK ngoài", StatusMediumRisk)
+                        }
+                        if (appInfo.hasNoLauncher) {
+                            StatusBadge("Ẩn icon", StatusHighRisk)
+                        }
+                        if (appInfo.hasOverlayPermission) {
+                            StatusBadge("Vẽ đè", StatusMediumRisk)
+                        }
+                        if (appInfo.hasAccessibilityPermission) {
+                            StatusBadge("Trợ năng", StatusHighRisk)
+                        }
+                        if (appInfo.hasInstallPermission) {
+                            StatusBadge("Cài đặt", StatusHighRisk)
+                        }
+                        if (appInfo.hasSmsPermission) {
+                            StatusBadge("SMS", StatusMediumRisk)
+                        }
+                        if (appInfo.hasNotificationListener) {
+                            StatusBadge("Đọc TB", StatusMediumRisk)
+                        }
+                        if (appInfo.hasAdSuspiciousPackage) {
+                            StatusBadge("ADS", StatusMediumRisk)
+                        }
+                    }
                 }
             }
         }
 
         Spacer(modifier = Modifier.width(8.dp))
 
-        // Risk level tag
         Box(
             modifier = Modifier
                 .clip(RoundedCornerShape(8.dp))
@@ -721,7 +768,7 @@ fun AppDetailDialog(appInfo: AppRiskInfo, onDismiss: () -> Unit) {
                     if (canUninstall) {
                         try {
                             val uninstallIntent = android.content.Intent(
-                                android.content.Intent.ACTION_DELETE,
+                                android.content.Intent.ACTION_UNINSTALL_PACKAGE,
                                 android.net.Uri.parse("package:${appInfo.packageName}")
                             ).apply {
                                 flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK

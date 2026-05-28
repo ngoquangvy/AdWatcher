@@ -134,7 +134,7 @@ fun MainScreen(
 
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
+                    .fillMaxWidth()
                     .weight(1f)
             ) {
                 when (activeTab) {

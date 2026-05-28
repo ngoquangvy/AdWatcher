@@ -172,7 +172,7 @@ class AdDetectionService : AccessibilityService() {
                 @Suppress("DEPRECATION")
                 packageManager.getInstallerPackageName(packageName)
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
         }
     }

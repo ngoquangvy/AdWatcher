@@ -150,7 +150,7 @@ fun LogItemCard(log: PopupLog) {
     val appIcon: Drawable? = remember(log.packageName) {
         try {
             context.packageManager.getApplicationIcon(log.packageName)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
         }
     }

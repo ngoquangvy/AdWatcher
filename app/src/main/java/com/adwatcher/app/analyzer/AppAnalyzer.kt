@@ -391,7 +391,7 @@ class AppAnalyzer(private val context: Context) {
                 @Suppress("DEPRECATION")
                 packageManager.getInstallerPackageName(packageName)
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
         }
     }
@@ -404,7 +404,7 @@ class AppAnalyzer(private val context: Context) {
                 packageManager.getPackageInfo(packageName, PackageManager.GET_PERMISSIONS)
             }
             packageInfo.requestedPermissions?.toList() ?: emptyList()
-        } catch (e: PackageManager.NameNotFoundException) {
+        } catch (_: PackageManager.NameNotFoundException) {
             emptyList()
         }
     }
