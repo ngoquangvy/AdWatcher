@@ -200,10 +200,12 @@ class AppAnalyzer(private val context: Context) {
             val isTrustedPrefix = isTrustedPackage(packageName)
             val isTrusted = isSystem || isTrustedPrefix
             val canUninstall = !isSystem
+            val popupCount = popupCounts[packageName] ?: 0
 
-            // Skip ONLY if it's a System app (cannot be uninstalled) AND we don't want all apps.
-            // This allows us to scan trusted Play Store apps but assign them lower risk scores.
+            // The scanner should show suspicious apps, not trusted OEM/vendor apps
+            // that simply need broad permissions for device integration.
             if (!includeAllApps && !canUninstall) continue
+            if (!includeAllApps && isTrusted && popupCount == 0) continue
 
             // ── Permission Analysis ──
             val permissions = getAppPermissions(packageName)
@@ -271,7 +273,15 @@ class AppAnalyzer(private val context: Context) {
 
             // ── Install Source Detection ──
             val installSource = getInstallSource(packageName)
-            val isSideloaded = !isSystem && !isTrustedInstallSource(installSource)
+            val isSamsungDistributed = installSource == "com.samsung.android.app.omcagent" ||
+                    installSource == "com.sec.android.app.samsungapps"
+            val isSamsungRemoteSupportApp = isSamsungDistributed && (
+                    pkgLower.startsWith("com.rsupport.") ||
+                            pkgLower.contains("rsupport") ||
+                            labelLower.contains("smart tutor") ||
+                            labelLower.contains("smarttutor")
+                    )
+            val isSideloaded = !isSystem && !isTrustedPrefix && !isTrustedInstallSource(installSource)
             val isBrandMimicWithBadSource = (isSuspiciousBrandLabel || isSuspiciousBrandPackage) && !isTrustedInstallSource(installSource)
 
             val isWhitelisted = isTrustedPrefix
@@ -290,6 +300,10 @@ class AppAnalyzer(private val context: Context) {
             }
             if (isWhitelisted) {
                 score -= 20
+            }
+            if (isSamsungRemoteSupportApp) {
+                score -= 15
+                reasons.add("Samsung Smart Tutor: Ứng dụng hỗ trợ từ xa do Samsung phân phối. Quyền mạnh là bình thường cho chức năng hỗ trợ, nhưng chỉ nên dùng khi bạn cần hỗ trợ.")
             }
 
             if (isFakeSystem) {
@@ -390,11 +404,15 @@ class AppAnalyzer(private val context: Context) {
 
             // ── Popup Frequency Scoring ──
             // Apps with detected popup logs get extra score based on count
-            val popupCount = popupCounts[packageName] ?: 0
+            
             if (popupCount > 0) {
-                val popupScore = minOf(popupCount * 3, 25)
+                val popupScore = minOf(popupCount * 5, 40)
                 score += popupScore
                 reasons.add("Phát hiện $popupCount popup quảng cáo: Popup xuất hiện $popupCount lần từ ứng dụng này, có biểu hiện của Adware hiển thị quảng cáo.")
+                if (popupCount >= 5) {
+                    score += 15
+                    reasons.add("Popup lặp lại nhiều lần: Nguồn cài đặt có thể uy tín, nhưng hành vi popup liên tục là tín hiệu rủi ro thực tế.")
+                }
             }
 
             // Soft whitelist reduction
@@ -427,6 +445,13 @@ class AppAnalyzer(private val context: Context) {
             if (totalDangerous >= 4) {
                 score += 15
                 reasons.add("Tích lũy nhiều quyền nguy hiểm: Ứng dụng yêu cầu $totalDangerous quyền nhạy cảm khác nhau.")
+            }
+
+            if (isTrusted && popupCount > 0) {
+                score = minOf(score, 35)
+            }
+            if (isSamsungRemoteSupportApp && popupCount == 0) {
+                score = minOf(score, 45)
             }
 
             // Cap score between 0 and 100
@@ -512,3 +537,4 @@ class AppAnalyzer(private val context: Context) {
         }
     }
 }
+

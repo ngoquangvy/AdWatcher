@@ -1,10 +1,12 @@
-package com.adwatcher.app.ui
+﻿package com.adwatcher.app.ui
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -41,6 +43,8 @@ fun MainScreen(
     isScanning: Boolean,
     onRefreshScan: () -> Unit,
     isAccessibilityEnabled: Boolean,
+    isStrongProtectionEnabled: Boolean,
+    onStrongProtectionChanged: (Boolean) -> Unit,
     onRequestAccessibilityPermission: () -> Unit
 ) {
     var activeTab by remember { mutableStateOf<ScreenTab>(ScreenTab.Logs) }
@@ -74,7 +78,7 @@ fun MainScreen(
                     selected = activeTab == ScreenTab.Logs,
                     onClick = { activeTab = ScreenTab.Logs },
                     icon = { @Suppress("DEPRECATION") Icon(Icons.Filled.List, contentDescription = "Logs") },
-                    label = { Text("Lịch sử", fontWeight = FontWeight.Medium) },
+                    label = { Text(appText("Nhật ký", "Logs"), fontWeight = FontWeight.Medium) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = ElectricCyan,
                         selectedTextColor = ElectricCyan,
@@ -88,7 +92,7 @@ fun MainScreen(
                     selected = activeTab == ScreenTab.Scanner,
                     onClick = { activeTab = ScreenTab.Scanner },
                     icon = { Icon(Icons.Default.Search, contentDescription = "Scanner") },
-                    label = { Text("Quét App", fontWeight = FontWeight.Medium) },
+                    label = { Text(appText("Quét app", "Scan"), fontWeight = FontWeight.Medium) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = ElectricCyan,
                         selectedTextColor = ElectricCyan,
@@ -102,7 +106,7 @@ fun MainScreen(
                     selected = activeTab == ScreenTab.Guide,
                     onClick = { activeTab = ScreenTab.Guide },
                     icon = { Icon(Icons.Default.Build, contentDescription = "Permission Guide") },
-                    label = { Text("Cấu hình", fontWeight = FontWeight.Medium) },
+                    label = { Text(appText("Cấu hình", "Settings"), fontWeight = FontWeight.Medium) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = ElectricCyan,
                         selectedTextColor = ElectricCyan,
@@ -149,6 +153,8 @@ fun MainScreen(
                     )
                     ScreenTab.Guide -> ConfigurationScreen(
                         isAccessibilityEnabled = isAccessibilityEnabled,
+                        isStrongProtectionEnabled = isStrongProtectionEnabled,
+                        onStrongProtectionChanged = onStrongProtectionChanged,
                         onRequestAccessibility = onRequestAccessibilityPermission
                     )
                 }
@@ -174,7 +180,7 @@ fun PermissionWarningBanner(
     ) {
         Icon(
             imageVector = Icons.Default.Warning,
-            contentDescription = "Cảnh báo quyền",
+            contentDescription = appText("Cảnh báo quyền", "Permission warning"),
             tint = StatusHighRisk,
             modifier = Modifier.size(24.dp)
         )
@@ -183,13 +189,16 @@ fun PermissionWarningBanner(
 
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "Cần Kích Hoạt Dịch Vụ",
+                text = appText("Cần bật bảo vệ", "Protection required"),
                 color = TextPrimary,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = "Bật Hỗ trợ tiếp cận để phát hiện quảng cáo ẩn danh.",
+                text = appText(
+                    "Bật Trợ năng để phát hiện và đóng popup lạ.",
+                    "Enable Accessibility to detect and close unknown popups."
+                ),
                 color = TextSecondary,
                 fontSize = 12.sp,
                 lineHeight = 16.sp
@@ -208,13 +217,13 @@ fun PermissionWarningBanner(
                 shape = RoundedCornerShape(10.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
             ) {
-                Text("BẬT", fontSize = 12.sp, fontWeight = FontWeight.Black)
+                Text(appText("BẬT", "ON"), fontSize = 12.sp, fontWeight = FontWeight.Black)
             }
 
             Spacer(modifier = Modifier.height(4.dp))
 
             TextButton(onClick = onClickGuideTab) {
-                Text("Xem hướng dẫn", color = ElectricCyan, fontSize = 12.sp)
+                Text(appText("Hướng dẫn", "Guide"), color = ElectricCyan, fontSize = 12.sp)
             }
         }
     }
@@ -223,16 +232,19 @@ fun PermissionWarningBanner(
 @Composable
 fun ConfigurationScreen(
     isAccessibilityEnabled: Boolean,
+    isStrongProtectionEnabled: Boolean,
+    onStrongProtectionChanged: (Boolean) -> Unit,
     onRequestAccessibility: () -> Unit
 ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(DeepDarkBg)
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp)
     ) {
         Text(
-            text = "Cấu Hình Hệ Thống",
+            text = appText("Cấu hình hệ thống", "System settings"),
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
             color = TextPrimary,
@@ -258,7 +270,7 @@ fun ConfigurationScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "Quyền Hỗ Trợ Tiếp Cận",
+                        text = appText("Quyền Trợ năng", "Accessibility permission"),
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary
@@ -274,7 +286,7 @@ fun ConfigurationScreen(
                             .padding(horizontal = 10.dp, vertical = 4.dp)
                     ) {
                         Text(
-                            text = if (isAccessibilityEnabled) "ĐÃ BẬT" else "CHƯA BẬT",
+                            text = if (isAccessibilityEnabled) appText("ĐÃ BẬT", "ON") else appText("CHƯA BẬT", "OFF"),
                             color = if (isAccessibilityEnabled) StatusLowRisk else StatusHighRisk,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
@@ -285,7 +297,10 @@ fun ConfigurationScreen(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 Text(
-                    text = "Quyền này cho phép AdWatcher giám sát sự xuất hiện của các cửa sổ pop-up lạ trong nền và chỉ ra thủ phạm.",
+                    text = appText(
+                        "Quyền này cho phép AdWatcher giám sát popup lạ và giúp đóng quảng cáo che màn hình.",
+                        "This permission lets AdWatcher monitor unknown popups and help close screen-blocking ads."
+                    ),
                     color = TextSecondary,
                     fontSize = 13.sp,
                     lineHeight = 18.sp
@@ -299,8 +314,119 @@ fun ConfigurationScreen(
                         colors = ButtonDefaults.buttonColors(containerColor = NeonPurple),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text("Đi tới cài đặt", fontWeight = FontWeight.Bold)
+                        Text(appText("Mở cài đặt", "Open settings"), fontWeight = FontWeight.Bold)
                     }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(20.dp))
+                .border(
+                    1.dp,
+                    if (isStrongProtectionEnabled) StatusMediumRisk.copy(alpha = 0.35f) else BorderDark,
+                    RoundedCornerShape(20.dp)
+                ),
+            colors = CardDefaults.cardColors(containerColor = CardDarkBg)
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = appText("Bảo vệ mạnh", "Strong protection"),
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    Switch(
+                        checked = isStrongProtectionEnabled,
+                        onCheckedChange = onStrongProtectionChanged
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = appText(
+                        "Tự đóng popup/overlay khi phát hiện quảng cáo che màn hình hoặc tấn công liên tiếp.",
+                        "Automatically closes popups and overlays when screen-blocking ads or repeated attacks are detected."
+                    ),
+                    color = TextSecondary,
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = if (isStrongProtectionEnabled) {
+                        appText(
+                            "Đang bật: phù hợp khi máy bị quảng cáo chiếm màn hình. Có thể gây app ngân hàng yêu cầu tắt Trợ năng.",
+                            "On: best when ads take over the screen. Banking apps may still ask you to disable Accessibility."
+                        )
+                    } else {
+                        appText(
+                            "Đang tắt: app vẫn ghi nhận popup lạ nhưng không tự bấm Back/Home. Phù hợp hơn trước khi dùng app ngân hàng.",
+                            "Off: AdWatcher still records unknown popups but will not press Back/Home. Better before using banking apps."
+                        )
+                    },
+                    color = if (isStrongProtectionEnabled) StatusMediumRisk else StatusLowRisk,
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(20.dp))
+                .border(1.dp, BorderDark, RoundedCornerShape(20.dp)),
+            colors = CardDefaults.cardColors(containerColor = CardDarkBg)
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text(
+                    text = appText("Chế độ ngân hàng", "Banking mode"),
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = appText(
+                        "Nếu app ngân hàng chặn thanh toán, hãy tắt quyền Trợ năng của AdWatcher trong cài đặt hệ thống. Android không cho app tự tắt quyền này thay bạn.",
+                        "If a banking app blocks payment, disable AdWatcher's Accessibility permission in system settings. Android does not allow this app to turn that permission off for you."
+                    ),
+                    color = TextSecondary,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+                OutlinedButton(
+                    onClick = onRequestAccessibility,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = ElectricCyan),
+                    border = ButtonDefaults.outlinedButtonBorder.copy(
+                        brush = androidx.compose.ui.graphics.SolidColor(BorderDark)
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        text = appText("Mở cài đặt Trợ năng", "Open Accessibility settings"),
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }
@@ -310,7 +436,7 @@ fun ConfigurationScreen(
         // Step by step guidelines if not enabled
         if (!isAccessibilityEnabled) {
             Text(
-                text = "Hướng dẫn từng bước kích hoạt:",
+                text = appText("Các bước bật bảo vệ:", "Enable protection steps:"),
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary,
@@ -318,10 +444,10 @@ fun ConfigurationScreen(
             )
 
             val steps = listOf(
-                "Nhấp nút \"Đi tới cài đặt\" bên trên.",
-                "Tìm mục \"Ứng dụng đã tải xuống\" (Downloaded Apps) hoặc \"Dịch vụ đã cài đặt\" (Installed Services).",
-                "Chọn \"AdWatcher\" từ danh sách.",
-                "Bật công tắc dịch vụ và chọn \"Cho phép\" (Allow) để hoàn tất."
+                appText("Nhấn nút \"Mở cài đặt\" ở trên.", "Tap the \"Open settings\" button above."),
+                appText("Tìm \"Ứng dụng đã tải xuống\" hoặc \"Dịch vụ đã cài đặt\".", "Find Downloaded apps or Installed services."),
+                appText("Chọn AdWatcher trong danh sách.", "Select AdWatcher from the list."),
+                appText("Bật dịch vụ và chọn Cho phép.", "Turn the service on and choose Allow.")
             )
 
             steps.forEachIndexed { index, step ->
@@ -371,7 +497,7 @@ fun ConfigurationScreen(
                     .padding(24.dp)
             ) {
                 Text(
-                    text = "Hệ thống bảo mật đang kích hoạt",
+                    text = appText("Bảo vệ đang bật", "Protection is active"),
                     color = StatusLowRisk,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
@@ -379,7 +505,10 @@ fun ConfigurationScreen(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Điện thoại của bạn đang được AdWatcher bảo vệ an toàn 24/7 khỏi các loại mã độc quảng cáo tự động hiện.",
+                    text = appText(
+                        "AdWatcher đang theo dõi popup lạ và sẽ cố gắng đóng quảng cáo che màn hình khi phát hiện tấn công.",
+                        "AdWatcher is monitoring unknown popups and will try to close screen-blocking ads during an attack."
+                    ),
                     color = TextSecondary,
                     fontSize = 13.sp,
                     lineHeight = 18.sp,
@@ -389,3 +518,4 @@ fun ConfigurationScreen(
         }
     }
 }
+

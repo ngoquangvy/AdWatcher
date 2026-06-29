@@ -33,6 +33,7 @@ class MainActivity : ComponentActivity() {
     // UI state states
     private var isAccessibilityEnabledState = mutableStateOf(false)
     private var isScanningState = mutableStateOf(false)
+    private var isStrongProtectionEnabledState = mutableStateOf(true)
     private val appsListState = mutableStateListOf<AppRiskInfo>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -40,6 +41,7 @@ class MainActivity : ComponentActivity() {
         
         // Initial permission check
         checkAccessibilityStatus()
+        isStrongProtectionEnabledState.value = ProtectionSettings.isStrongProtectionEnabled(applicationContext)
 
         // Scan apps on startup
         triggerAppScan()
@@ -52,6 +54,7 @@ class MainActivity : ComponentActivity() {
                 val logsList by database.popupLogDao().getAllLogsFlow().collectAsState(initial = emptyList())
                 val isAccessibilityEnabled by remember { isAccessibilityEnabledState }
                 val isScanning by remember { isScanningState }
+                val isStrongProtectionEnabled by remember { isStrongProtectionEnabledState }
 
                 MainScreen(
                     logs = logsList,
@@ -64,6 +67,11 @@ class MainActivity : ComponentActivity() {
                     isScanning = isScanning,
                     onRefreshScan = { triggerAppScan() },
                     isAccessibilityEnabled = isAccessibilityEnabled,
+                    isStrongProtectionEnabled = isStrongProtectionEnabled,
+                    onStrongProtectionChanged = { enabled ->
+                        ProtectionSettings.setStrongProtectionEnabled(applicationContext, enabled)
+                        isStrongProtectionEnabledState.value = enabled
+                    },
                     onRequestAccessibilityPermission = { openAccessibilitySettings() }
                 )
             }

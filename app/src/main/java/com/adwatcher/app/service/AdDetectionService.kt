@@ -11,6 +11,7 @@ import android.os.Build
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityWindowInfo
+import com.adwatcher.app.ProtectionSettings
 import com.adwatcher.app.analyzer.AppAnalyzer
 import com.adwatcher.app.analyzer.UsageStatsHelper
 import com.adwatcher.app.data.AppDatabase
@@ -45,6 +46,9 @@ class AdDetectionService : AccessibilityService() {
     private var lastOverlayCheck: Long = 0L
     private val lastOverlayLogged = mutableMapOf<String, Long>()
     private val lastOverlayDismissed = mutableMapOf<String, Long>()
+    private val overlayEventTimestamps = mutableMapOf<String, MutableList<Long>>()
+    private val lastPopupDismissed = mutableMapOf<String, Long>()
+    private var lastGlobalDismiss: Long = 0L
 
     // Long-term frequency tracking (hourly rolling window)
     private val hourlyPopupCounts = mutableMapOf<String, MutableList<Long>>()
@@ -110,9 +114,7 @@ class AdDetectionService : AccessibilityService() {
         }
 
         val installSource = getInstallSource(packageName)
-        val isFromStore = installSource == "com.android.vending" || 
-                          installSource == "com.amazon.venezia" || 
-                          installSource == "com.sec.android.app.samsungapps"
+        val isFromStore = isStoreInstallSource(installSource)
 
         // ── Step 3: Throttle rapid duplicate events (same app within 1.5 seconds) ──
         if (packageName == lastLoggedPackage && (currentTimestamp - lastLoggedTimestamp) < 1500) {
@@ -163,6 +165,12 @@ class AdDetectionService : AccessibilityService() {
         )
         val hasSuspiciousText = suspiciousKeywords.any { textLower.contains(it) }
 
+        if (ProtectionSettings.isStrongProtectionEnabled(applicationContext) &&
+            shouldDismissPopup(packageName, currentTimestamp, isSpamAttack, isHighFrequency, hasSuspiciousText)
+        ) {
+            dismissInterruptingWindow(currentTimestamp, preferHome = false)
+        }
+
         // ── Determine detection method ──
         val detectionMethod = when (type) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> "WINDOW_STATE_CHANGED"
@@ -181,9 +189,7 @@ class AdDetectionService : AccessibilityService() {
                 if (isSystem) return@launch
 
                 val appInstallSource = getInstallSource(packageName)
-                val isSideloaded = appInstallSource != "com.android.vending" && 
-                                   appInstallSource != "com.amazon.venezia" && 
-                                   appInstallSource != "com.sec.android.app.samsungapps"
+                val isSideloaded = !isStoreInstallSource(appInstallSource)
 
                 val prevFg = usageStatsHelper.getForegroundAppPastSeconds(5)
                 val recentApps = usageStatsHelper.getRecentForegroundApps(30).joinToString(", ")
@@ -260,6 +266,13 @@ class AdDetectionService : AccessibilityService() {
         }
     }
 
+    private fun isStoreInstallSource(installSource: String?): Boolean {
+        return installSource == "com.android.vending" ||
+                installSource == "com.amazon.venezia" ||
+                installSource == "com.sec.android.app.samsungapps" ||
+                installSource == "com.samsung.android.app.omcagent"
+    }
+
     // ════════════════════════════════════════════════════════════════
     // OVERLAY WINDOW DETECTION
     // Catches SYSTEM_ALERT_WINDOW / TYPE_APPLICATION_OVERLAY popups
@@ -306,10 +319,10 @@ class AdDetectionService : AccessibilityService() {
                     else -> "OVERLAY_UNKNOWN"
                 }
 
-                // Check logging cooldown for this specific package
+                // Check logging cooldown without skipping active protection.
                 val sinceLastLog = now - (lastOverlayLogged[pkg] ?: 0L)
-                if (sinceLastLog < OVERLAY_LOG_COOLDOWN_MS) continue
-                lastOverlayLogged[pkg] = now
+                val shouldLogOverlay = sinceLastLog >= OVERLAY_LOG_COOLDOWN_MS
+                if (shouldLogOverlay) lastOverlayLogged[pkg] = now
 
                 // Get window bounds to determine if it's full-screen
                 val bounds = Rect()
@@ -317,6 +330,11 @@ class AdDetectionService : AccessibilityService() {
                 val displayMetrics = resources.displayMetrics
                 val isFullScreen = bounds.width() >= displayMetrics.widthPixels * 0.8 &&
                                    bounds.height() >= displayMetrics.heightPixels * 0.8
+
+                val overlayHistory = overlayEventTimestamps.getOrPut(pkg) { mutableListOf() }
+                overlayHistory.removeAll { now - it > OVERLAY_ATTACK_WINDOW_MS }
+                overlayHistory.add(now)
+                val isOverlayAttack = overlayHistory.size >= OVERLAY_ATTACK_THRESHOLD
 
                 // Extract title if available (API 33+)
                 val windowTitle = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -329,7 +347,8 @@ class AdDetectionService : AccessibilityService() {
                 val hasSuspiciousText = SUSPICIOUS_KEYWORDS.any { textLower.contains(it) }
 
                 // ── Log the overlay event ──
-                serviceScope.launch {
+                if (shouldLogOverlay || isOverlayAttack) {
+                    serviceScope.launch {
                     try {
                         val appInfo = packageManager.getApplicationInfo(pkg, 0)
                         val appLabel = packageManager.getApplicationLabel(appInfo).toString()
@@ -339,16 +358,21 @@ class AdDetectionService : AccessibilityService() {
 
                         val previousForeground = usageStatsHelper.getForegroundAppPastSeconds(5)
                         val recentApps = usageStatsHelper.getRecentForegroundApps(30).joinToString(", ")
+                        val installSource = getInstallSource(pkg)
 
                         val log = PopupLog(
                             packageName = pkg,
                             appName = appLabel,
                             timestamp = now,
                             isSystemApp = false,
-                            eventType = if (isFullScreen) "OVERLAY_FULL" else "OVERLAY",
-                            isSideloaded = true,
-                            isAttackState = false,
-                            installSource = getInstallSource(pkg),
+                            eventType = when {
+                                isOverlayAttack -> "ATTACK"
+                                isFullScreen -> "OVERLAY_FULL"
+                                else -> "OVERLAY"
+                            },
+                            isSideloaded = !isStoreInstallSource(installSource),
+                            isAttackState = isOverlayAttack,
+                            installSource = installSource,
                             popupText = windowTitle.ifEmpty { null },
                             hasSuspiciousText = hasSuspiciousText,
                             containsUrl = containsUrl,
@@ -366,9 +390,9 @@ class AdDetectionService : AccessibilityService() {
                             appName = pkg,
                             timestamp = now,
                             isSystemApp = false,
-                            eventType = if (isFullScreen) "OVERLAY_FULL" else "OVERLAY",
+                            eventType = if (isOverlayAttack) "ATTACK" else if (isFullScreen) "OVERLAY_FULL" else "OVERLAY",
                             isSideloaded = true,
-                            isAttackState = false,
+                            isAttackState = isOverlayAttack,
                             installSource = null,
                             popupText = windowTitle.ifEmpty { null },
                             hasSuspiciousText = hasSuspiciousText,
@@ -379,13 +403,22 @@ class AdDetectionService : AccessibilityService() {
                         )
                         AppDatabase.getDatabase(applicationContext).popupLogDao().insertLog(log)
                     }
+                    }
                 }
 
-                // ── Auto-dismiss if it's a full-screen overlay from suspicious app ──
+                // ── Auto-dismiss disruptive overlays from suspicious apps ──
                 val sinceLastDismiss = now - (lastOverlayDismissed[pkg] ?: 0L)
-                if (isFullScreen && sinceLastDismiss >= OVERLAY_DISMISS_COOLDOWN_MS) {
+                val dismissCooldown = if (isOverlayAttack) {
+                    OVERLAY_ATTACK_DISMISS_COOLDOWN_MS
+                } else {
+                    OVERLAY_DISMISS_COOLDOWN_MS
+                }
+                if (ProtectionSettings.isStrongProtectionEnabled(applicationContext) &&
+                    (isFullScreen || isOverlayAttack || hasSuspiciousText) &&
+                    sinceLastDismiss >= dismissCooldown
+                ) {
                     lastOverlayDismissed[pkg] = now
-                    dismissOverlay()
+                    dismissInterruptingWindow(now, preferHome = isFullScreen || isOverlayAttack)
                 }
             }
         } catch (_: Exception) {
@@ -393,13 +426,32 @@ class AdDetectionService : AccessibilityService() {
         }
     }
 
-    /**
-     * Dismisses an overlay window using the best available method
-     * for the current Android version:
-     * - API 24+: Gesture simulation (swipe down then up = back)
-     * - API 16+: Global action HOME (more reliable than BACK for overlays)
-     */
-    private fun dismissOverlay() {
+    private fun dismissInterruptingWindow(now: Long, preferHome: Boolean) {
+        if (now - lastGlobalDismiss < GLOBAL_DISMISS_COOLDOWN_MS) return
+        lastGlobalDismiss = now
+
+        performGlobalAction(GLOBAL_ACTION_BACK)
+        if (preferHome) {
+            performGlobalAction(GLOBAL_ACTION_HOME)
+        }
+    }
+
+    private fun shouldDismissPopup(
+        packageName: String,
+        now: Long,
+        isSpamAttack: Boolean,
+        isHighFrequency: Boolean,
+        hasSuspiciousText: Boolean
+    ): Boolean {
+        if (!isSpamAttack && !isHighFrequency && !hasSuspiciousText) return false
+        val sinceLastDismiss = now - (lastPopupDismissed[packageName] ?: 0L)
+        if (sinceLastDismiss < POPUP_DISMISS_COOLDOWN_MS) return false
+        lastPopupDismissed[packageName] = now
+        return true
+    }
+
+    @Suppress("unused")
+    private fun dismissOverlayGestureFallback() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             // ── API 24+: Use gesture simulation ──
             // Swipe from bottom-left toward center — mimics the "back gesture"
@@ -452,7 +504,12 @@ class AdDetectionService : AccessibilityService() {
         // Cooldown constants (milliseconds)
         private const val OVERLAY_CHECK_COOLDOWN_MS = 3000L      // Don't enumerate windows more than once per 3s
         private const val OVERLAY_LOG_COOLDOWN_MS = 10000L       // Don't log the same overlay package more than once per 10s
-        private const val OVERLAY_DISMISS_COOLDOWN_MS = 30000L   // Don't dismiss the same package more than once per 30s
+        private const val OVERLAY_DISMISS_COOLDOWN_MS = 8000L
+        private const val OVERLAY_ATTACK_DISMISS_COOLDOWN_MS = 1500L
+        private const val OVERLAY_ATTACK_WINDOW_MS = 15000L
+        private const val OVERLAY_ATTACK_THRESHOLD = 2
+        private const val POPUP_DISMISS_COOLDOWN_MS = 2500L
+        private const val GLOBAL_DISMISS_COOLDOWN_MS = 700L
 
         // Suspicious text keywords (same as popup detection but extended)
         private val SUSPICIOUS_KEYWORDS = listOf(

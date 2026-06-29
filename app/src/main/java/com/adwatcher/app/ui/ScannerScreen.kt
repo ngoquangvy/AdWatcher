@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -132,13 +133,13 @@ fun ScannerScreen(
         ) {
             Column {
                 Text(
-                    text = "Quét Ứng Dụng",
+                    text = appText("Qu?t ?ng d?ng", "App scan"),
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
                     color = TextPrimary
                 )
                 Text(
-                    text = "${appsList.size} app nghi ngờ được phát hiện",
+                    text = appText("${appsList.size} app nghi ng? ???c ph?t hi?n", "${appsList.size} suspicious apps found"),
                     fontSize = 13.sp,
                     color = if (appsList.isNotEmpty()) StatusMediumRisk else StatusLowRisk
                 )
@@ -153,7 +154,7 @@ fun ScannerScreen(
                 shape = RoundedCornerShape(12.dp),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
             ) {
-                Text(if (isScanning) "Đang quét..." else "Quét lại", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Text(if (isScanning) appText("?ang qu?t...", "Scanning...") else appText("Qu?t l?i", "Scan again"), fontSize = 13.sp, fontWeight = FontWeight.Bold)
             }
         }
 
@@ -174,13 +175,13 @@ fun ScannerScreen(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "${selectedPackageNames.size} app đã chọn",
+                        text = appText("${selectedPackageNames.size} app ?? ch?n", "${selectedPackageNames.size} apps selected"),
                         color = TextPrimary,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 13.sp
                     )
                     Text(
-                        text = "Hệ thống sẽ yêu cầu xác nhận gỡ cài đặt từng app.",
+                        text = appText("H? th?ng s? y?u c?u x?c nh?n g? c?i ??t t?ng app.", "Android will ask you to confirm each uninstall."),
                         color = TextSecondary,
                         fontSize = 11.sp
                     )
@@ -190,7 +191,7 @@ fun ScannerScreen(
                     onClick = { selectedPackageNames = emptySet() },
                     colors = ButtonDefaults.textButtonColors(contentColor = ElectricCyan)
                 ) {
-                    Text("Bỏ chọn")
+                    Text(appText("B? ch?n", "Clear"))
                 }
 
                 Button(
@@ -202,7 +203,7 @@ fun ScannerScreen(
                         contentColor = Color.White
                     )
                 ) {
-                    Text(if (isBulkUninstalling) "Đang gỡ..." else "Gỡ nhiều")
+                    Text(if (isBulkUninstalling) appText("?ang g?...", "Uninstalling...") else appText("G? nhi?u", "Uninstall selected"))
                 }
             }
 
@@ -236,14 +237,14 @@ fun ScannerScreen(
                         .padding(32.dp)
                 ) {
                     Text(
-                        text = "✅ Thiết bị sạch",
+                        text = appText("Thi?t b? s?ch", "Device is clean"),
                         color = StatusLowRisk,
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Không phát hiện ứng dụng nghi ngờ nào. Tất cả ứng dụng trên máy đều thuộc hệ thống hoặc từ nguồn uy tín.",
+                        text = appText("Kh?ng ph?t hi?n ?ng d?ng nghi ng? n?o. T?t c? ?ng d?ng tr?n m?y ??u thu?c h? th?ng ho?c t? ngu?n uy t?n.", "No suspicious apps found. Installed apps appear to be system apps or from trusted sources."),
                         color = TextSecondary,
                         fontSize = 13.sp,
                         lineHeight = 18.sp,
@@ -294,7 +295,7 @@ fun RiskSummaryCard(highCount: Int, mediumCount: Int) {
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "Mức Độ An Toàn",
+                text = appText("M?c ?? an to?n", "Safety level"),
                 color = TextSecondary,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium
@@ -302,9 +303,9 @@ fun RiskSummaryCard(highCount: Int, mediumCount: Int) {
             Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = when {
-                    highCount > 0 -> "Nguy hiểm"
-                    mediumCount > 0 -> "Cần kiểm tra"
-                    else -> "An toàn"
+                    highCount > 0 -> appText("Nguy hi?m", "Danger")
+                    mediumCount > 0 -> appText("C?n ki?m tra", "Needs review")
+                    else -> appText("An to?n", "Safe")
                 },
                 color = when {
                     highCount > 0 -> StatusHighRisk
@@ -317,8 +318,8 @@ fun RiskSummaryCard(highCount: Int, mediumCount: Int) {
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            RiskStatBadge("Cảnh báo", highCount, StatusHighRisk)
-            RiskStatBadge("Nghi ngờ", mediumCount, StatusMediumRisk)
+            RiskStatBadge(appText("C?nh b?o", "Alerts"), highCount, StatusHighRisk)
+            RiskStatBadge(appText("Nghi ng?", "Suspicious"), mediumCount, StatusMediumRisk)
         }
     }
 }
@@ -444,42 +445,42 @@ fun AppRiskCard(
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         if (appInfo.isFakeSystemApp) {
-                            StatusBadge("Giả mạo", StatusHighRisk)
+                            StatusBadge(appText("C?nh b?o", "Warning"), StatusHighRisk)
                         }
                         if (appInfo.isSideloaded) {
-                            StatusBadge("APK ngoài", StatusMediumRisk)
+                            StatusBadge(appText("Nghi ng?", "Suspicious"), StatusMediumRisk)
                         }
                         if (appInfo.hasNoLauncher) {
-                            StatusBadge("Ẩn icon", StatusHighRisk)
+                            StatusBadge(appText("C?nh b?o", "Warning"), StatusHighRisk)
                         }
                         if (appInfo.hasOverlayPermission) {
-                            StatusBadge("Vẽ đè", StatusMediumRisk)
+                            StatusBadge(appText("Nghi ng?", "Suspicious"), StatusMediumRisk)
                         }
                         if (appInfo.hasAccessibilityPermission) {
-                            StatusBadge("Trợ năng", StatusHighRisk)
+                            StatusBadge(appText("C?nh b?o", "Warning"), StatusHighRisk)
                         }
                         if (appInfo.hasInstallPermission) {
-                            StatusBadge("Cài đặt", StatusHighRisk)
+                            StatusBadge(appText("C?nh b?o", "Warning"), StatusHighRisk)
                         }
                         if (appInfo.hasSmsPermission) {
-                            StatusBadge("SMS", StatusMediumRisk)
+                            StatusBadge(appText("Nghi ng?", "Suspicious"), StatusMediumRisk)
                         }
                         if (appInfo.hasNotificationListener) {
-                            StatusBadge("Đọc TB", StatusMediumRisk)
+                            StatusBadge(appText("Nghi ng?", "Suspicious"), StatusMediumRisk)
                         }
                         if (appInfo.hasAdSuspiciousPackage) {
-                            StatusBadge("ADS", StatusMediumRisk)
+                            StatusBadge(appText("Nghi ng?", "Suspicious"), StatusMediumRisk)
                         }
                         if (appInfo.isActiveAdmin) {
-                            StatusBadge("Quản trị", StatusHighRisk)
+                            StatusBadge(appText("C?nh b?o", "Warning"), StatusHighRisk)
                         } else if (appInfo.hasDeviceAdminPermission) {
-                            StatusBadge("Quyền QT", StatusMediumRisk)
+                            StatusBadge(appText("Nghi ng?", "Suspicious"), StatusMediumRisk)
                         }
                         if (appInfo.hasUsageStatsPermission) {
-                            StatusBadge("Theo dõi", StatusMediumRisk)
+                            StatusBadge(appText("Nghi ng?", "Suspicious"), StatusMediumRisk)
                         }
                         if (appInfo.isRecentlyInstalled) {
-                            StatusBadge("Mới cài", StatusMediumRisk)
+                            StatusBadge(appText("Nghi ng?", "Suspicious"), StatusMediumRisk)
                         }
                     }
                 }
@@ -496,7 +497,7 @@ fun AppRiskCard(
                 .padding(horizontal = 8.dp, vertical = 4.dp)
         ) {
             Text(
-                text = "${appInfo.riskScore}%",
+                text = appText("?i?m r?i ro: ${appInfo.riskScore}%", "Risk score: ${appInfo.riskScore}%"),
                 color = indicatorColor,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold
@@ -560,7 +561,7 @@ fun AppDetailDialog(appInfo: AppRiskInfo, onDismiss: () -> Unit) {
                         color = TextPrimary
                     )
                     Text(
-                        text = "Điểm rủi ro: ${appInfo.riskScore}%",
+                        text = appText("?i?m r?i ro: ${appInfo.riskScore}%", "Risk score: ${appInfo.riskScore}%"),
                         fontSize = 12.sp,
                         color = when (appInfo.riskLevel) {
                             RiskLevel.HIGH -> StatusHighRisk
@@ -574,12 +575,15 @@ fun AppDetailDialog(appInfo: AppRiskInfo, onDismiss: () -> Unit) {
         },
         text = {
             Column(
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState())
             ) {
                 HorizontalDivider(color = BorderDark, modifier = Modifier.padding(bottom = 12.dp))
 
                 // Package name
-                Text("Tên package:", fontSize = 12.sp, color = TextSecondary, fontWeight = FontWeight.Medium)
+                Text(appText("T?n package:", "Package name:"), fontSize = 12.sp, color = TextSecondary, fontWeight = FontWeight.Medium)
                 Text(
                     text = appInfo.packageName,
                     fontSize = 13.sp,
@@ -599,11 +603,11 @@ fun AppDetailDialog(appInfo: AppRiskInfo, onDismiss: () -> Unit) {
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     val installSourceLabel = when (appInfo.installSource) {
-                        "com.android.vending" -> "Google Play Store ✓"
-                        "com.sec.android.app.samsungapps" -> "Samsung Galaxy Store ✓"
-                        "com.amazon.venezia" -> "Amazon Appstore ✓"
-                        "com.samsung.android.app.omcagent" -> "Samsung Installer (omcagent) ✓"
-                        null -> "Không xác định (Sideloaded)"
+                        "com.android.vending" -> "Google Play Store"
+                        "com.sec.android.app.samsungapps" -> "Samsung Galaxy Store"
+                        "com.amazon.venezia" -> "Amazon Appstore"
+                        "com.samsung.android.app.omcagent" -> "Samsung Installer"
+                        null -> appText("Kh?ng x?c ??nh (APK ngo?i)", "Unknown (sideloaded)")
                         else -> appInfo.installSource
                     }
                     val installSourceColor = when (appInfo.installSource) {
@@ -613,9 +617,17 @@ fun AppDetailDialog(appInfo: AppRiskInfo, onDismiss: () -> Unit) {
                         "com.samsung.android.app.omcagent" -> StatusLowRisk
                         else -> StatusMediumRisk
                     }
+                    val isTrustedInstallSource = when (appInfo.installSource) {
+                        "com.android.vending",
+                        "com.sec.android.app.samsungapps",
+                        "com.amazon.venezia",
+                        "com.samsung.android.app.omcagent" -> true
+                        else -> false
+                    }
+                    val sourceBadgeColor = if (isTrustedInstallSource) StatusLowRisk else StatusHighRisk
 
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Nguồn cài đặt:", fontSize = 11.sp, color = TextSecondary)
+                        Text(appText("Ngu?n c?i ??t:", "Install source:"), fontSize = 11.sp, color = TextSecondary)
                         Text(
                             text = installSourceLabel,
                             fontSize = 13.sp,
@@ -627,13 +639,17 @@ fun AppDetailDialog(appInfo: AppRiskInfo, onDismiss: () -> Unit) {
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(8.dp))
-                            .background(StatusHighRisk.copy(alpha = 0.15f))
-                            .border(1.dp, StatusHighRisk.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                            .background(sourceBadgeColor.copy(alpha = 0.15f))
+                            .border(1.dp, sourceBadgeColor.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
                             .padding(horizontal = 8.dp, vertical = 4.dp)
                     ) {
                         Text(
-                            text = "Nghi ngờ",
-                            color = StatusHighRisk,
+                            text = if (isTrustedInstallSource) {
+                                appText("Ngu?n tin c?y", "Trusted source")
+                            } else {
+                                appText("Ngu?n l?", "Unknown source")
+                            },
+                            color = sourceBadgeColor,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -643,19 +659,34 @@ fun AppDetailDialog(appInfo: AppRiskInfo, onDismiss: () -> Unit) {
                 // ── Permission Detail Section ──
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = "Quyền nguy hiểm (${
-                        listOf(
-                            appInfo.hasOverlayPermission,
-                            appInfo.hasAccessibilityPermission,
-                            appInfo.hasInstallPermission,
-                            appInfo.hasBootPermission,
-                            appInfo.hasSmsPermission,
-                            appInfo.hasNotificationListener,
-                            appInfo.hasQueryAllPackages,
-                            appInfo.hasDeviceAdminPermission,
-                            appInfo.hasUsageStatsPermission
-                        ).count { it }
-                    } phát hiện):",
+                    text = appText(
+                        "Quyền nguy hiểm (${
+                            listOf(
+                                appInfo.hasOverlayPermission,
+                                appInfo.hasAccessibilityPermission,
+                                appInfo.hasInstallPermission,
+                                appInfo.hasBootPermission,
+                                appInfo.hasSmsPermission,
+                                appInfo.hasNotificationListener,
+                                appInfo.hasQueryAllPackages,
+                                appInfo.hasDeviceAdminPermission,
+                                appInfo.hasUsageStatsPermission
+                            ).count { it }
+                        } phát hiện):",
+                        "Dangerous permissions (${
+                            listOf(
+                                appInfo.hasOverlayPermission,
+                                appInfo.hasAccessibilityPermission,
+                                appInfo.hasInstallPermission,
+                                appInfo.hasBootPermission,
+                                appInfo.hasSmsPermission,
+                                appInfo.hasNotificationListener,
+                                appInfo.hasQueryAllPackages,
+                                appInfo.hasDeviceAdminPermission,
+                                appInfo.hasUsageStatsPermission
+                            ).count { it }
+                        } found):"
+                    ),
                     fontSize = 13.sp,
                     color = TextSecondary,
                     fontWeight = FontWeight.Bold,
@@ -663,15 +694,15 @@ fun AppDetailDialog(appInfo: AppRiskInfo, onDismiss: () -> Unit) {
                 )
 
                 val permItems = mutableListOf<Pair<String, Boolean>>()
-                permItems.add("Vẽ đè (SYSTEM_ALERT_WINDOW)" to appInfo.hasOverlayPermission)
-                permItems.add("Trợ năng (BIND_ACCESSIBILITY_SERVICE)" to appInfo.hasAccessibilityPermission)
-                permItems.add("Cài đặt APK (REQUEST_INSTALL_PACKAGES)" to appInfo.hasInstallPermission)
-                permItems.add("Tự khởi chạy (RECEIVE_BOOT_COMPLETED)" to appInfo.hasBootPermission)
-                permItems.add("Đọc SMS (READ_SMS)" to appInfo.hasSmsPermission)
-                permItems.add("Đọc thông báo (BIND_NOTIFICATION_LISTENER)" to appInfo.hasNotificationListener)
-                permItems.add("Xem danh sách app (QUERY_ALL_PACKAGES)" to appInfo.hasQueryAllPackages)
-                permItems.add("Quản trị thiết bị (BIND_DEVICE_ADMIN)" to appInfo.hasDeviceAdminPermission)
-                permItems.add("Truy cập dữ liệu sử dụng (PACKAGE_USAGE_STATS)" to appInfo.hasUsageStatsPermission)
+                permItems.add(appText("V? ?? (SYSTEM_ALERT_WINDOW)", "Overlay (SYSTEM_ALERT_WINDOW)") to appInfo.hasOverlayPermission)
+                permItems.add(appText("Tr? n?ng (BIND_ACCESSIBILITY_SERVICE)", "Accessibility (BIND_ACCESSIBILITY_SERVICE)") to appInfo.hasAccessibilityPermission)
+                permItems.add(appText("C?i ??t APK (REQUEST_INSTALL_PACKAGES)", "APK install (REQUEST_INSTALL_PACKAGES)") to appInfo.hasInstallPermission)
+                permItems.add(appText("T? kh?i ch?y (RECEIVE_BOOT_COMPLETED)", "Auto-start (RECEIVE_BOOT_COMPLETED)") to appInfo.hasBootPermission)
+                permItems.add(appText("??c SMS (READ_SMS)", "Read SMS (READ_SMS)") to appInfo.hasSmsPermission)
+                permItems.add(appText("??c th?ng b?o (BIND_NOTIFICATION_LISTENER)", "Notification access (BIND_NOTIFICATION_LISTENER)") to appInfo.hasNotificationListener)
+                permItems.add(appText("Xem danh s?ch app (QUERY_ALL_PACKAGES)", "App list access (QUERY_ALL_PACKAGES)") to appInfo.hasQueryAllPackages)
+                permItems.add(appText("Qu?n tr? thi?t b? (BIND_DEVICE_ADMIN)", "Device admin (BIND_DEVICE_ADMIN)") to appInfo.hasDeviceAdminPermission)
+                permItems.add(appText("Truy c?p d? li?u s? d?ng (PACKAGE_USAGE_STATS)", "Usage access (PACKAGE_USAGE_STATS)") to appInfo.hasUsageStatsPermission)
 
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     permItems.forEach { (name, enabled) ->
@@ -723,14 +754,14 @@ fun AppDetailDialog(appInfo: AppRiskInfo, onDismiss: () -> Unit) {
                         )
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
-                            text = "Ứng dụng này không thuộc hệ thống hay nhà sản xuất nhưng chưa phát hiện hành vi đáng ngờ cụ thể.",
+                            text = appText("?ng d?ng n?y kh?ng thu?c h? th?ng hay nh? s?n xu?t nh?ng ch?a ph?t hi?n h?nh vi ??ng ng? c? th?.", "This app is not from the system or manufacturer, but no specific suspicious behavior was found."),
                             color = TextPrimary,
                             fontSize = 13.sp
                         )
                     }
                 } else {
                     Text(
-                        text = "Dấu hiệu nghi ngờ phát hiện:",
+                        text = appText("D?u hi?u nghi ng? ph?t hi?n:", "Suspicious signs found:"),
                         fontSize = 13.sp,
                         color = TextSecondary,
                         fontWeight = FontWeight.Bold,
@@ -750,13 +781,13 @@ fun AppDetailDialog(appInfo: AppRiskInfo, onDismiss: () -> Unit) {
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Warning,
-                                    contentDescription = "Cảnh báo",
+                                    contentDescription = appText("C?nh b?o", "Warning"),
                                     tint = StatusHighRisk,
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Text(
-                                    text = reason,
+                                    text = appRiskReasonText(reason),
                                     color = TextPrimary,
                                     fontSize = 12.sp,
                                     lineHeight = 16.sp
@@ -772,7 +803,7 @@ fun AppDetailDialog(appInfo: AppRiskInfo, onDismiss: () -> Unit) {
                 onClick = onDismiss,
                 colors = ButtonDefaults.textButtonColors(contentColor = ElectricCyan)
             ) {
-                Text("Đóng", fontWeight = FontWeight.Bold)
+                Text(appText("??ng", "Close"), fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
@@ -811,7 +842,7 @@ fun AppDetailDialog(appInfo: AppRiskInfo, onDismiss: () -> Unit) {
                 shape = RoundedCornerShape(8.dp)
             ) {
                 Text(
-                    if (canUninstall) "Gỡ Cài Đặt" else "Không thể gỡ",
+                    if (canUninstall) appText("G? c?i ??t", "Uninstall") else appText("Kh?ng th? g?", "Cannot uninstall"),
                     color = Color.White,
                     fontWeight = FontWeight.Bold
                 )

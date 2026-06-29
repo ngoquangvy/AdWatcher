@@ -129,13 +129,13 @@ fun LogsScreen(
         ) {
             Column {
                 Text(
-                    text = "Popup Nghi Ngờ",
+                    text = appText("Popup nghi ng?", "Suspicious popups"),
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
                     color = TextPrimary
                 )
                 Text(
-                    text = "$totalPopupCount popup từ $totalAppCount ứng dụng",
+                    text = appText("$totalPopupCount popup t? $totalAppCount ?ng d?ng", "$totalPopupCount popups from $totalAppCount apps"),
                     fontSize = 13.sp,
                     color = if (logs.isNotEmpty()) StatusMediumRisk else TextSecondary
                 )
@@ -154,7 +154,7 @@ fun LogsScreen(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Delete,
-                        contentDescription = "Xóa toàn bộ lịch sử"
+                        contentDescription = appText("X?a to?n b? nh?t k?", "Clear all logs")
                     )
                 }
             }
@@ -196,13 +196,13 @@ fun LogsScreen(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "${selectedPkgs.size} app đã chọn",
+                        text = appText("${selectedPkgs.size} app ?? ch?n", "${selectedPkgs.size} apps selected"),
                         color = TextPrimary,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 13.sp
                     )
                     Text(
-                        text = "Hệ thống sẽ yêu cầu xác nhận gỡ cài đặt từng app.",
+                        text = appText("H? th?ng s? y?u c?u x?c nh?n g? c?i ??t t?ng app.", "Android will ask you to confirm each uninstall."),
                         color = TextSecondary,
                         fontSize = 11.sp
                     )
@@ -211,7 +211,7 @@ fun LogsScreen(
                     onClick = { selectedPkgs = emptySet() },
                     colors = ButtonDefaults.textButtonColors(contentColor = ElectricCyan)
                 ) {
-                    Text("Bỏ chọn")
+                    Text(appText("B? ch?n", "Clear"))
                 }
                 Button(
                     onClick = { startBulkUninstall() },
@@ -222,7 +222,7 @@ fun LogsScreen(
                         contentColor = androidx.compose.ui.graphics.Color.White
                     )
                 ) {
-                    Text(if (isBulkUninstalling) "Đang gỡ..." else "Gỡ nhiều")
+                    Text(if (isBulkUninstalling) appText("?ang g?...", "Uninstalling...") else appText("G? nhi?u", "Uninstall selected"))
                 }
             }
         }
@@ -233,21 +233,21 @@ fun LogsScreen(
             onDismissRequest = { showClearDialog = false },
             containerColor = CardDarkBg,
             title = {
-                Text("Xóa toàn bộ lịch sử?", color = TextPrimary, fontWeight = FontWeight.Bold)
+                Text(appText("X?a to?n b? nh?t k??", "Clear all logs?"), color = TextPrimary, fontWeight = FontWeight.Bold)
             },
             text = {
-                Text("Tất cả nhật ký ghi nhận popup sẽ bị xóa vĩnh viễn và không thể khôi phục.", color = TextSecondary)
+                Text(appText("T?t c? nh?t k? popup s? b? x?a v?nh vi?n v? kh?ng th? kh?i ph?c.", "All popup logs will be permanently deleted and cannot be restored."), color = TextSecondary)
             },
             confirmButton = {
                 TextButton(onClick = { onClearLogs(); showClearDialog = false },
                     colors = ButtonDefaults.textButtonColors(contentColor = StatusHighRisk)) {
-                    Text("Xóa", fontWeight = FontWeight.Bold)
+                    Text(appText("B? ch?n", "Clear"), fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showClearDialog = false },
                     colors = ButtonDefaults.textButtonColors(contentColor = TextSecondary)) {
-                    Text("Hủy")
+                    Text(appText("H?y", "Cancel"))
                 }
             }
         )
@@ -368,7 +368,7 @@ private fun AppGroupCard(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "Lần cuối: $lastTime",
+                        text = appText("L?n cu?i: $lastTime", "Last seen: $lastTime"),
                         color = ElectricCyan,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium,
@@ -381,11 +381,11 @@ private fun AppGroupCard(
                             .horizontalScroll(rememberScrollState())
                     ) {
                         if (popupCount > 1) {
-                            Badge(text = "$popupCount popup", color = StatusMediumRisk)
+                            Badge(text = appText("Link l?", "Odd link"), color = StatusMediumRisk)
                         }
-                        if (hasAttack) Badge(text = "TẤN CÔNG", color = StatusHighRisk)
-                        if (hasSuspicious) Badge(text = "Text lạ", color = StatusHighRisk)
-                        if (hasUrl) Badge(text = "Link lạ", color = StatusMediumRisk)
+                        if (hasAttack) Badge(text = appText("T?N C?NG", "ATTACK"), color = StatusHighRisk)
+                        if (hasSuspicious) Badge(text = appText("T?N C?NG", "ATTACK"), color = StatusHighRisk)
+                        if (hasUrl) Badge(text = appText("Link l?", "Odd link"), color = StatusMediumRisk)
                     }
                 }
             }
@@ -470,7 +470,7 @@ private fun AppDetailDialog(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = "${entries.size} popup được ghi nhận",
+                        text = appText("${entries.size} popup ???c ghi nh?n", "${entries.size} popups recorded"),
                         color = StatusMediumRisk,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
@@ -483,7 +483,7 @@ private fun AppDetailDialog(
             Spacer(modifier = Modifier.height(12.dp))
 
             Text(
-                text = "Lịch sử popup",
+                text = appText("L?ch s? popup", "Popup history"),
                 color = TextPrimary,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold
@@ -518,14 +518,14 @@ private fun AppDetailDialog(
                         brush = SolidColor(BorderDark)
                     )
                 ) {
-                    Text("Đóng")
+                    Text(appText("??ng", "Close"))
                 }
                 Button(
                     onClick = onUninstall,
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColors(containerColor = StatusHighRisk)
                 ) {
-                    Text("Gỡ cài đặt")
+                    Text(appText("G? c?i ??t", "Uninstall"))
                 }
             }
         }
@@ -581,11 +581,11 @@ private fun DetailLogRow(log: PopupLog) {
                 Badge(text = detectionLabel, color = NeonPurple)
                 if (log.hasSuspiciousText) {
                     Spacer(modifier = Modifier.width(4.dp))
-                    Badge(text = "Text lạ", color = StatusHighRisk)
+                    Badge(text = appText("T?N C?NG", "ATTACK"), color = StatusHighRisk)
                 }
                 if (log.containsUrl) {
                     Spacer(modifier = Modifier.width(4.dp))
-                    Badge(text = "Link lạ", color = StatusMediumRisk)
+                    Badge(text = appText("Link l?", "Odd link"), color = StatusMediumRisk)
                 }
             }
             if (!log.popupText.isNullOrBlank()) {
@@ -627,7 +627,7 @@ fun EmptyLogsView() {
             ) {
                 Icon(
                     imageVector = Icons.Default.Info,
-                    contentDescription = "Đang quét",
+                    contentDescription = appText("?ang qu?t", "Scanning"),
                     tint = NeonPurple,
                     modifier = Modifier.size(40.dp)
                 )
@@ -636,7 +636,7 @@ fun EmptyLogsView() {
             Spacer(modifier = Modifier.height(24.dp))
 
             Text(
-                text = "Đang theo dõi popup lạ",
+                text = appText("?ang theo d?i popup l?", "Monitoring unknown popups"),
                 color = TextPrimary,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold
@@ -645,7 +645,7 @@ fun EmptyLogsView() {
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "Hệ thống đang giám sát ngầm. Popup từ app hệ thống, Google, Samsung, Microsoft và các hãng lớn sẽ được bỏ qua. Chỉ popup từ app lạ mới bị bắt và ghi lại.",
+                text = appText("H? th?ng ?ang gi?m s?t n?n. Popup t? app h? th?ng, Google, Samsung, Microsoft v? c?c h?ng l?n s? ???c b? qua. Ch? popup t? app l? m?i b? ghi l?i.", "Background monitoring is active. Popups from system apps, Google, Samsung, Microsoft, and major trusted vendors are ignored. Only unknown-app popups are recorded."),
                 color = TextSecondary,
                 fontSize = 13.sp,
                 lineHeight = 18.sp,
