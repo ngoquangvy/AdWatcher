@@ -28,7 +28,12 @@ data class PopupLog(
     val containsUrl: Boolean = false,
     val previousForegroundPackage: String? = null,
     val recentForegroundApps: String? = null,
-    val detectionMethod: String? = null
+    val detectionMethod: String? = null,
+    val suspectedSourcePackage: String? = null,
+    val triggerPackage: String? = null,
+    val attributionConfidence: String? = null,
+    val isQuickPopup: Boolean = false,
+    val isBrowserHandoff: Boolean = false
 )
 
 data class PopupCount(
@@ -57,7 +62,7 @@ interface PopupLogDao {
     suspend fun clearLogsForPackage(pkg: String)
 }
 
-@Database(entities = [PopupLog::class], version = 5, exportSchema = false)
+@Database(entities = [PopupLog::class], version = 6, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun popupLogDao(): PopupLogDao
 

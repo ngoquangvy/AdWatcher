@@ -546,6 +546,7 @@ private fun DetailLogRow(log: PopupLog) {
             "OVERLAY_LEGACY_ALERT" -> "Alert overlay"
             "OVERLAY_LEGACY_OVERLAY" -> "System overlay"
             "OVERLAY_UNKNOWN" -> "Overlay ?"
+            "BROWSER_HANDOFF" -> "Browser handoff"
             else -> log.detectionMethod ?: "Auto"
         }
     }
@@ -579,6 +580,18 @@ private fun DetailLogRow(log: PopupLog) {
                 modifier = Modifier.horizontalScroll(rememberScrollState())
             ) {
                 Badge(text = detectionLabel, color = NeonPurple)
+                if (log.isQuickPopup) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Badge(text = appText("Popup nhanh", "Quick popup"), color = StatusMediumRisk)
+                }
+                if (log.isBrowserHandoff) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Badge(text = appText("Qua trinh duyet", "Browser handoff"), color = StatusMediumRisk)
+                }
+                log.attributionConfidence?.let { confidence ->
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Badge(text = confidence, color = if (confidence == "HIGH") StatusHighRisk else TextSecondary)
+                }
                 if (log.hasSuspiciousText) {
                     Spacer(modifier = Modifier.width(4.dp))
                     Badge(text = appText("T?N C?NG", "ATTACK"), color = StatusHighRisk)
@@ -587,6 +600,19 @@ private fun DetailLogRow(log: PopupLog) {
                     Spacer(modifier = Modifier.width(4.dp))
                     Badge(text = appText("Link l?", "Odd link"), color = StatusMediumRisk)
                 }
+            }
+            if (log.suspectedSourcePackage != null || log.triggerPackage != null) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = appText(
+                        "Nguon nghi ngo: ${log.suspectedSourcePackage ?: log.packageName} -> cua so: ${log.triggerPackage ?: log.packageName}",
+                        "Suspected source: ${log.suspectedSourcePackage ?: log.packageName} -> window: ${log.triggerPackage ?: log.packageName}"
+                    ),
+                    color = TextSecondary,
+                    fontSize = 11.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
             if (!log.popupText.isNullOrBlank()) {
                 Spacer(modifier = Modifier.height(4.dp))

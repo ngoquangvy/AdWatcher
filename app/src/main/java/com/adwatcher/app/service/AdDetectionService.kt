@@ -109,12 +109,42 @@ class AdDetectionService : AccessibilityService() {
         // NOTE: Play Store apps are NOT filtered here — even clean-looking apps
         // from Play Store can show ad popups via WebView/Intent. We track their
         // frequency separately to distinguish normal popups from adware.
+        val previousForegroundShort = usageStatsHelper.getForegroundAppPastSeconds(2)
+        val latestForeground = usageStatsHelper.getLatestForegroundApp(5)
+        val recentForegroundShort = usageStatsHelper.getRecentForegroundApps(10)
+        val preFilterPopupText = event.text.joinToString(" ").take(200)
+        val preFilterTextLower = preFilterPopupText.lowercase()
+        val preFilterContainsUrl = urlPattern.matcher(preFilterTextLower).find() || preFilterTextLower.contains("http")
+        val preFilterHasSuspiciousText = SUSPICIOUS_KEYWORDS.any { preFilterTextLower.contains(it) }
+        val isAdWatcherInterrupted = previousForegroundShort == this.packageName ||
+                latestForeground == this.packageName
+
+        val browserSourceCandidate = findBrowserHandoffSource(
+            currentPackage = packageName,
+            previousForeground = previousForegroundShort,
+            recentForegroundApps = recentForegroundShort
+        )
+
         if (appAnalyzer.isTrustedPackage(packageName)) {
+            if (browserSourceCandidate != null) {
+                logBrowserHandoff(
+                    sourcePackage = browserSourceCandidate,
+                    browserPackage = packageName,
+                    timestamp = currentTimestamp,
+                    popupText = preFilterPopupText,
+                    containsUrl = preFilterContainsUrl,
+                    hasSuspiciousText = preFilterHasSuspiciousText,
+                    recentForegroundApps = recentForegroundShort
+                )
+            }
             return
         }
 
         val installSource = getInstallSource(packageName)
         val isFromStore = isStoreInstallSource(installSource)
+        if (previousForegroundShort == packageName) {
+            return
+        }
 
         // ── Step 3: Throttle rapid duplicate events (same app within 1.5 seconds) ──
         if (packageName == lastLoggedPackage && (currentTimestamp - lastLoggedTimestamp) < 1500) {
@@ -165,10 +195,11 @@ class AdDetectionService : AccessibilityService() {
         )
         val hasSuspiciousText = suspiciousKeywords.any { textLower.contains(it) }
 
-        if (ProtectionSettings.isStrongProtectionEnabled(applicationContext) &&
+        if (isAdWatcherInterrupted &&
+            ProtectionSettings.isStrongProtectionEnabled(applicationContext) &&
             shouldDismissPopup(packageName, currentTimestamp, isSpamAttack, isHighFrequency, hasSuspiciousText)
         ) {
-            dismissInterruptingWindow(currentTimestamp, preferHome = false)
+            restoreAdWatcherForeground(currentTimestamp)
         }
 
         // ── Determine detection method ──
@@ -193,6 +224,7 @@ class AdDetectionService : AccessibilityService() {
 
                 val prevFg = usageStatsHelper.getForegroundAppPastSeconds(5)
                 val recentApps = usageStatsHelper.getRecentForegroundApps(30).joinToString(", ")
+                val quickPopup = prevFg != null && prevFg != packageName
 
                 // Derive event type from behavioral signals
                 val derivedEventType = when {
@@ -216,13 +248,23 @@ class AdDetectionService : AccessibilityService() {
                     containsUrl = containsUrl,
                     previousForegroundPackage = prevFg,
                     recentForegroundApps = recentApps.ifEmpty { null },
-                    detectionMethod = detectionMethod
+                    detectionMethod = detectionMethod,
+                    suspectedSourcePackage = if (quickPopup) prevFg else null,
+                    triggerPackage = packageName,
+                    attributionConfidence = when {
+                        isSpamAttack || isHighFrequency || hasSuspiciousText -> "HIGH"
+                        quickPopup -> "MEDIUM"
+                        else -> "LOW"
+                    },
+                    isQuickPopup = quickPopup,
+                    isBrowserHandoff = false
                 )
 
                 AppDatabase.getDatabase(applicationContext).popupLogDao().insertLog(log)
             } catch (_: PackageManager.NameNotFoundException) {
                 val prevFg = usageStatsHelper.getForegroundAppPastSeconds(5)
                 val recentApps = usageStatsHelper.getRecentForegroundApps(30).joinToString(", ")
+                val quickPopup = prevFg != null && prevFg != packageName
 
                 val derivedEventType = when {
                     isSpamAttack -> "ATTACK"
@@ -244,7 +286,16 @@ class AdDetectionService : AccessibilityService() {
                     containsUrl = containsUrl,
                     previousForegroundPackage = prevFg,
                     recentForegroundApps = recentApps.ifEmpty { null },
-                    detectionMethod = detectionMethod
+                    detectionMethod = detectionMethod,
+                    suspectedSourcePackage = if (quickPopup) prevFg else null,
+                    triggerPackage = packageName,
+                    attributionConfidence = when {
+                        isSpamAttack || isHighFrequency || hasSuspiciousText -> "HIGH"
+                        quickPopup -> "MEDIUM"
+                        else -> "LOW"
+                    },
+                    isQuickPopup = quickPopup,
+                    isBrowserHandoff = false
                 )
                 AppDatabase.getDatabase(applicationContext).popupLogDao().insertLog(log)
             } catch (e: Exception) {
@@ -273,6 +324,74 @@ class AdDetectionService : AccessibilityService() {
                 installSource == "com.samsung.android.app.omcagent"
     }
 
+    private fun isBrowserPackage(packageName: String): Boolean {
+        return packageName == "com.android.chrome" ||
+                packageName == "com.sec.android.app.sbrowser" ||
+                packageName == "org.mozilla.firefox" ||
+                packageName == "com.microsoft.emmx" ||
+                packageName == "com.opera.browser" ||
+                packageName == "com.brave.browser"
+    }
+
+    private fun findBrowserHandoffSource(
+        currentPackage: String,
+        previousForeground: String?,
+        recentForegroundApps: List<String>
+    ): String? {
+        if (!isBrowserPackage(currentPackage)) return null
+        val candidates = mutableListOf<String>()
+        previousForeground?.let { candidates.add(it) }
+        candidates.addAll(recentForegroundApps.asReversed())
+        return candidates.firstOrNull { candidate ->
+            candidate != currentPackage &&
+                    candidate != packageName &&
+                    candidate != defaultLauncherPackage &&
+                    !appAnalyzer.isTrustedPackage(candidate)
+        }
+    }
+
+    private fun logBrowserHandoff(
+        sourcePackage: String,
+        browserPackage: String,
+        timestamp: Long,
+        popupText: String,
+        containsUrl: Boolean,
+        hasSuspiciousText: Boolean,
+        recentForegroundApps: List<String>
+    ) {
+        serviceScope.launch {
+            try {
+                val appInfo = packageManager.getApplicationInfo(sourcePackage, 0)
+                val appLabel = packageManager.getApplicationLabel(appInfo).toString()
+                val installSource = getInstallSource(sourcePackage)
+                val log = PopupLog(
+                    packageName = sourcePackage,
+                    appName = appLabel,
+                    timestamp = timestamp,
+                    isSystemApp = false,
+                    eventType = "BROWSER_HANDOFF",
+                    isSideloaded = !isStoreInstallSource(installSource),
+                    isAttackState = hasSuspiciousText || containsUrl,
+                    installSource = installSource,
+                    popupText = popupText.ifEmpty { null },
+                    hasSuspiciousText = hasSuspiciousText,
+                    containsUrl = containsUrl,
+                    previousForegroundPackage = sourcePackage,
+                    recentForegroundApps = recentForegroundApps.joinToString(", ").ifEmpty { null },
+                    detectionMethod = "BROWSER_HANDOFF",
+                    suspectedSourcePackage = sourcePackage,
+                    triggerPackage = browserPackage,
+                    attributionConfidence = if (hasSuspiciousText || containsUrl) "HIGH" else "MEDIUM",
+                    isQuickPopup = true,
+                    isBrowserHandoff = true
+                )
+                AppDatabase.getDatabase(applicationContext).popupLogDao().insertLog(log)
+            } catch (_: Exception) {
+                // Ignore attribution failures; normal popup detection still runs.
+            }
+        }
+    }
+
     // ════════════════════════════════════════════════════════════════
     // OVERLAY WINDOW DETECTION
     // Catches SYSTEM_ALERT_WINDOW / TYPE_APPLICATION_OVERLAY popups
@@ -297,6 +416,8 @@ class AdDetectionService : AccessibilityService() {
         try {
             @Suppress("UNCHECKED_CAST")
             val allWindows = (windows as? List<*>) ?: return
+            val latestForeground = usageStatsHelper.getLatestForegroundApp(5)
+            val isAdWatcherForeground = latestForeground == applicationContext.packageName
             for (winObj in allWindows) {
                 val winInfo = winObj as AccessibilityWindowInfo
                 val windowType = winInfo.type
@@ -310,6 +431,7 @@ class AdDetectionService : AccessibilityService() {
                 // Skip our own app, system apps, and trusted packages
                 val myPackage = applicationContext.packageName
                 if (pkg == myPackage || appAnalyzer.isTrustedPackage(pkg)) continue
+                if (pkg == latestForeground) continue
 
                 // Determine overlay detection method by window type
                 val overlayMethod = when (windowType) {
@@ -359,6 +481,7 @@ class AdDetectionService : AccessibilityService() {
                         val previousForeground = usageStatsHelper.getForegroundAppPastSeconds(5)
                         val recentApps = usageStatsHelper.getRecentForegroundApps(30).joinToString(", ")
                         val installSource = getInstallSource(pkg)
+                        val quickPopup = previousForeground != null && previousForeground != pkg
 
                         val log = PopupLog(
                             packageName = pkg,
@@ -378,12 +501,22 @@ class AdDetectionService : AccessibilityService() {
                             containsUrl = containsUrl,
                             previousForegroundPackage = previousForeground,
                             recentForegroundApps = recentApps.ifEmpty { null },
-                            detectionMethod = overlayMethod
+                            detectionMethod = overlayMethod,
+                            suspectedSourcePackage = if (quickPopup) previousForeground else null,
+                            triggerPackage = pkg,
+                            attributionConfidence = when {
+                                isOverlayAttack || hasSuspiciousText -> "HIGH"
+                                quickPopup -> "MEDIUM"
+                                else -> "LOW"
+                            },
+                            isQuickPopup = quickPopup,
+                            isBrowserHandoff = false
                         )
                         AppDatabase.getDatabase(applicationContext).popupLogDao().insertLog(log)
                     } catch (_: PackageManager.NameNotFoundException) {
                         val previousForeground = usageStatsHelper.getForegroundAppPastSeconds(5)
                         val recentApps = usageStatsHelper.getRecentForegroundApps(30).joinToString(", ")
+                        val quickPopup = previousForeground != null && previousForeground != pkg
 
                         val log = PopupLog(
                             packageName = pkg,
@@ -399,7 +532,16 @@ class AdDetectionService : AccessibilityService() {
                             containsUrl = containsUrl,
                             previousForegroundPackage = previousForeground,
                             recentForegroundApps = recentApps.ifEmpty { null },
-                            detectionMethod = overlayMethod
+                            detectionMethod = overlayMethod,
+                            suspectedSourcePackage = if (quickPopup) previousForeground else null,
+                            triggerPackage = pkg,
+                            attributionConfidence = when {
+                                isOverlayAttack || hasSuspiciousText -> "HIGH"
+                                quickPopup -> "MEDIUM"
+                                else -> "LOW"
+                            },
+                            isQuickPopup = quickPopup,
+                            isBrowserHandoff = false
                         )
                         AppDatabase.getDatabase(applicationContext).popupLogDao().insertLog(log)
                     }
@@ -413,12 +555,13 @@ class AdDetectionService : AccessibilityService() {
                 } else {
                     OVERLAY_DISMISS_COOLDOWN_MS
                 }
-                if (ProtectionSettings.isStrongProtectionEnabled(applicationContext) &&
+                if (isAdWatcherForeground &&
+                    ProtectionSettings.isStrongProtectionEnabled(applicationContext) &&
                     (isFullScreen || isOverlayAttack || hasSuspiciousText) &&
                     sinceLastDismiss >= dismissCooldown
                 ) {
                     lastOverlayDismissed[pkg] = now
-                    dismissInterruptingWindow(now, preferHome = isFullScreen || isOverlayAttack)
+                    restoreAdWatcherForeground(now)
                 }
             }
         } catch (_: Exception) {
@@ -426,13 +569,22 @@ class AdDetectionService : AccessibilityService() {
         }
     }
 
-    private fun dismissInterruptingWindow(now: Long, preferHome: Boolean) {
+    private fun restoreAdWatcherForeground(now: Long) {
         if (now - lastGlobalDismiss < GLOBAL_DISMISS_COOLDOWN_MS) return
         lastGlobalDismiss = now
 
-        performGlobalAction(GLOBAL_ACTION_BACK)
-        if (preferHome) {
-            performGlobalAction(GLOBAL_ACTION_HOME)
+        try {
+            val intent = packageManager.getLaunchIntentForPackage(applicationContext.packageName)
+            if (intent != null) {
+                intent.addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                            Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                            Intent.FLAG_ACTIVITY_SINGLE_TOP
+                )
+                startActivity(intent)
+            }
+        } catch (_: Exception) {
+            // Avoid Back/Home here; protection should not manipulate other apps.
         }
     }
 
@@ -452,28 +604,8 @@ class AdDetectionService : AccessibilityService() {
 
     @Suppress("unused")
     private fun dismissOverlayGestureFallback() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            // ── API 24+: Use gesture simulation ──
-            // Swipe from bottom-left toward center — mimics the "back gesture"
-            // Many overlays are dismissed this way on modern Android
-            val displayMetrics = resources.displayMetrics
-            val width = displayMetrics.widthPixels
-            val height = displayMetrics.heightPixels
-
-            val path = Path().apply {
-                moveTo(width * 0.05f, height * 0.5f)   // start from left edge center
-                lineTo(width * 0.15f, height * 0.5f)    // swipe right slightly
-            }
-
-            val gesture = GestureDescription.Builder()
-                .addStroke(GestureDescription.StrokeDescription(path, 0L, 150L))
-                .build()
-
-            dispatchGesture(gesture, null, null)
-        } else {
-            // ── API 16-23: Use global action ──
-            performGlobalAction(GLOBAL_ACTION_HOME)
-        }
+        // Intentionally disabled: protection restores AdWatcher instead of
+        // sending gestures, Back, or Home into another app.
     }
 
     /**

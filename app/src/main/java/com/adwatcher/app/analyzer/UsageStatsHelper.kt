@@ -46,6 +46,28 @@ class UsageStatsHelper(private val context: Context) {
         return lastForegroundPackage
     }
 
+    fun getLatestForegroundApp(lookbackSeconds: Int = 5): String? {
+        if (usageStatsManager == null) return null
+
+        val endTime = System.currentTimeMillis()
+        val startTime = endTime - (lookbackSeconds * 1000L)
+        val events = usageStatsManager.queryEvents(startTime, endTime)
+        val event = UsageEvents.Event()
+        var latestPackage: String? = null
+        var latestTimestamp = 0L
+
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event)
+            if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED &&
+                event.timeStamp >= latestTimestamp
+            ) {
+                latestPackage = event.packageName
+                latestTimestamp = event.timeStamp
+            }
+        }
+        return latestPackage
+    }
+
     /**
      * Get all unique packages that had an ACTIVITY_RESUMED event in the last X seconds.
      */

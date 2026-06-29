@@ -53,6 +53,9 @@ private fun dynamicVietnameseText(en: String): String? {
     Regex("^Dangerous permissions \\((\\d+) found\\):$").matchEntire(en)?.let {
         return "Quy\u1ec1n nguy hi\u1ec3m (${it.groupValues[1]} ph\u00e1t hi\u1ec7n):"
     }
+    Regex("^Suspected source: (.+) -> window: (.+)$").matchEntire(en)?.let {
+        return "Ngu\u1ed3n nghi ng\u1edd: ${it.groupValues[1]} -> c\u1eeda s\u1ed5: ${it.groupValues[2]}"
+    }
     return null
 }
 
@@ -113,6 +116,8 @@ private val viFallbacks = mapOf(
     "Install source:" to "Ngu\u1ed3n c\u00e0i \u0111\u1eb7t:",
     "Trusted source" to "Ngu\u1ed3n tin c\u1eady",
     "Unknown source" to "Ngu\u1ed3n l\u1ea1",
+    "Quick popup" to "Popup nhanh",
+    "Browser handoff" to "Qua tr\u00ecnh duy\u1ec7t",
     "Suspicious signs found:" to "D\u1ea5u hi\u1ec7u nghi ng\u1edd ph\u00e1t hi\u1ec7n:",
     "Overlay (SYSTEM_ALERT_WINDOW)" to "V\u1ebd \u0111\u00e8 (SYSTEM_ALERT_WINDOW)",
     "Accessibility (BIND_ACCESSIBILITY_SERVICE)" to "Tr\u1ee3 n\u0103ng (BIND_ACCESSIBILITY_SERVICE)",
