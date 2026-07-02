@@ -47,8 +47,10 @@ class AdDetectionService : AccessibilityService() {
     private val lastOverlayLogged = mutableMapOf<String, Long>()
     private val lastOverlayDismissed = mutableMapOf<String, Long>()
     private val overlayEventTimestamps = mutableMapOf<String, MutableList<Long>>()
-    private val lastPopupDismissed = mutableMapOf<String, Long>()
     private var lastGlobalDismiss: Long = 0L
+    private var adWatcherGuardPackage: String? = null
+    private var adWatcherGuardStartedAt: Long = 0L
+    private var adWatcherGuardRestoreCount: Int = 0
 
     // Long-term frequency tracking (hourly rolling window)
     private val hourlyPopupCounts = mutableMapOf<String, MutableList<Long>>()
@@ -118,6 +120,11 @@ class AdDetectionService : AccessibilityService() {
         val preFilterHasSuspiciousText = SUSPICIOUS_KEYWORDS.any { preFilterTextLower.contains(it) }
         val isAdWatcherInterrupted = previousForegroundShort == this.packageName ||
                 latestForeground == this.packageName
+        val isForegroundInterrupt = previousForegroundShort != null &&
+                previousForegroundShort != packageName &&
+                previousForegroundShort != defaultLauncherPackage &&
+                previousForegroundShort != "android" &&
+                previousForegroundShort != "com.android.systemui"
 
         val browserSourceCandidate = findBrowserHandoffSource(
             currentPackage = packageName,
@@ -194,12 +201,25 @@ class AdDetectionService : AccessibilityService() {
             "vip", "lucky", "spin", "jackpot", "xu vàng", "hoàn trả"
         )
         val hasSuspiciousText = suspiciousKeywords.any { textLower.contains(it) }
+        val hasLauncher = packageManager.getLaunchIntentForPackage(packageName) != null
+        val isHiddenAppInterrupt = isForegroundInterrupt && !hasLauncher
+        val shouldLogWindowPopup = isAdWatcherInterrupted ||
+                hasSuspiciousText ||
+                containsUrl ||
+                isSpamAttack ||
+                isHighFrequency ||
+                isHiddenAppInterrupt
 
-        if (isAdWatcherInterrupted &&
-            ProtectionSettings.isStrongProtectionEnabled(applicationContext) &&
-            shouldDismissPopup(packageName, currentTimestamp, isSpamAttack, isHighFrequency, hasSuspiciousText)
-        ) {
-            restoreAdWatcherForeground(currentTimestamp)
+        if (!shouldLogWindowPopup) {
+            return
+        }
+
+        if (isAdWatcherInterrupted && ProtectionSettings.isStrongProtectionEnabled(applicationContext)) {
+            restoreAdWatcherForeground(
+                now = currentTimestamp,
+                reasonPackage = packageName,
+                strongSignal = isSpamAttack || isHighFrequency || hasSuspiciousText || containsUrl || isHiddenAppInterrupt
+            )
         }
 
         // ── Determine detection method ──
@@ -243,7 +263,7 @@ class AdDetectionService : AccessibilityService() {
                     isSideloaded = isSideloaded,
                     isAttackState = isSpamAttack || isHighFrequency,
                     installSource = appInstallSource,
-                    popupText = popupText.ifEmpty { null },
+                    popupText = null,
                     hasSuspiciousText = hasSuspiciousText,
                     containsUrl = containsUrl,
                     previousForegroundPackage = prevFg,
@@ -281,7 +301,7 @@ class AdDetectionService : AccessibilityService() {
                     isSideloaded = true,
                     isAttackState = isSpamAttack || isHighFrequency,
                     installSource = null,
-                    popupText = popupText.ifEmpty { null },
+                    popupText = null,
                     hasSuspiciousText = hasSuspiciousText,
                     containsUrl = containsUrl,
                     previousForegroundPackage = prevFg,
@@ -373,7 +393,7 @@ class AdDetectionService : AccessibilityService() {
                     isSideloaded = !isStoreInstallSource(installSource),
                     isAttackState = hasSuspiciousText || containsUrl,
                     installSource = installSource,
-                    popupText = popupText.ifEmpty { null },
+                    popupText = null,
                     hasSuspiciousText = hasSuspiciousText,
                     containsUrl = containsUrl,
                     previousForegroundPackage = sourcePackage,
@@ -407,8 +427,6 @@ class AdDetectionService : AccessibilityService() {
      * gracefully on older API levels.
      */
     private fun detectOverlayWindows(now: Long) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return
-
         // Throttle: don't check more than once per cooldown
         if (now - lastOverlayCheck < OVERLAY_CHECK_COOLDOWN_MS) return
         lastOverlayCheck = now
@@ -467,9 +485,10 @@ class AdDetectionService : AccessibilityService() {
                 val textLower = windowTitle.lowercase()
                 val containsUrl = urlPattern.matcher(textLower).find() || textLower.contains("http")
                 val hasSuspiciousText = SUSPICIOUS_KEYWORDS.any { textLower.contains(it) }
+                val isStrongOverlay = isFullScreen || isOverlayAttack || hasSuspiciousText || containsUrl
 
                 // ── Log the overlay event ──
-                if (shouldLogOverlay || isOverlayAttack) {
+                if (isStrongOverlay && (shouldLogOverlay || isOverlayAttack)) {
                     serviceScope.launch {
                     try {
                         val appInfo = packageManager.getApplicationInfo(pkg, 0)
@@ -496,7 +515,7 @@ class AdDetectionService : AccessibilityService() {
                             isSideloaded = !isStoreInstallSource(installSource),
                             isAttackState = isOverlayAttack,
                             installSource = installSource,
-                            popupText = windowTitle.ifEmpty { null },
+                            popupText = null,
                             hasSuspiciousText = hasSuspiciousText,
                             containsUrl = containsUrl,
                             previousForegroundPackage = previousForeground,
@@ -527,7 +546,7 @@ class AdDetectionService : AccessibilityService() {
                             isSideloaded = true,
                             isAttackState = isOverlayAttack,
                             installSource = null,
-                            popupText = windowTitle.ifEmpty { null },
+                            popupText = null,
                             hasSuspiciousText = hasSuspiciousText,
                             containsUrl = containsUrl,
                             previousForegroundPackage = previousForeground,
@@ -557,11 +576,15 @@ class AdDetectionService : AccessibilityService() {
                 }
                 if (isAdWatcherForeground &&
                     ProtectionSettings.isStrongProtectionEnabled(applicationContext) &&
-                    (isFullScreen || isOverlayAttack || hasSuspiciousText) &&
+                    isStrongOverlay &&
                     sinceLastDismiss >= dismissCooldown
                 ) {
                     lastOverlayDismissed[pkg] = now
-                    restoreAdWatcherForeground(now)
+                    restoreAdWatcherForeground(
+                        now = now,
+                        reasonPackage = pkg,
+                        strongSignal = isOverlayAttack || hasSuspiciousText || containsUrl
+                    )
                 }
             }
         } catch (_: Exception) {
@@ -569,9 +592,26 @@ class AdDetectionService : AccessibilityService() {
         }
     }
 
-    private fun restoreAdWatcherForeground(now: Long) {
+    private fun restoreAdWatcherForeground(now: Long, reasonPackage: String, strongSignal: Boolean) {
         if (now - lastGlobalDismiss < GLOBAL_DISMISS_COOLDOWN_MS) return
+
+        val isSameGuardWindow = adWatcherGuardPackage == reasonPackage &&
+                now - adWatcherGuardStartedAt <= ADWATCHER_GUARD_WINDOW_MS
+        if (!isSameGuardWindow) {
+            adWatcherGuardPackage = reasonPackage
+            adWatcherGuardStartedAt = now
+            adWatcherGuardRestoreCount = 0
+        }
+
+        val maxRestores = if (strongSignal) {
+            ADWATCHER_GUARD_MAX_STRONG_RESTORES
+        } else {
+            ADWATCHER_GUARD_MAX_LIGHT_RESTORES
+        }
+        if (adWatcherGuardRestoreCount >= maxRestores) return
+
         lastGlobalDismiss = now
+        adWatcherGuardRestoreCount += 1
 
         try {
             val intent = packageManager.getLaunchIntentForPackage(applicationContext.packageName)
@@ -586,20 +626,6 @@ class AdDetectionService : AccessibilityService() {
         } catch (_: Exception) {
             // Avoid Back/Home here; protection should not manipulate other apps.
         }
-    }
-
-    private fun shouldDismissPopup(
-        packageName: String,
-        now: Long,
-        isSpamAttack: Boolean,
-        isHighFrequency: Boolean,
-        hasSuspiciousText: Boolean
-    ): Boolean {
-        if (!isSpamAttack && !isHighFrequency && !hasSuspiciousText) return false
-        val sinceLastDismiss = now - (lastPopupDismissed[packageName] ?: 0L)
-        if (sinceLastDismiss < POPUP_DISMISS_COOLDOWN_MS) return false
-        lastPopupDismissed[packageName] = now
-        return true
     }
 
     @Suppress("unused")
@@ -640,8 +666,10 @@ class AdDetectionService : AccessibilityService() {
         private const val OVERLAY_ATTACK_DISMISS_COOLDOWN_MS = 1500L
         private const val OVERLAY_ATTACK_WINDOW_MS = 15000L
         private const val OVERLAY_ATTACK_THRESHOLD = 2
-        private const val POPUP_DISMISS_COOLDOWN_MS = 2500L
-        private const val GLOBAL_DISMISS_COOLDOWN_MS = 700L
+        private const val GLOBAL_DISMISS_COOLDOWN_MS = 900L
+        private const val ADWATCHER_GUARD_WINDOW_MS = 6000L
+        private const val ADWATCHER_GUARD_MAX_LIGHT_RESTORES = 2
+        private const val ADWATCHER_GUARD_MAX_STRONG_RESTORES = 3
 
         // Suspicious text keywords (same as popup detection but extended)
         private val SUSPICIOUS_KEYWORDS = listOf(

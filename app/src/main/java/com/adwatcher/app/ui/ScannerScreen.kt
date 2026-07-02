@@ -203,7 +203,7 @@ fun ScannerScreen(
                         contentColor = Color.White
                     )
                 ) {
-                    Text(if (isBulkUninstalling) appText("?ang g?...", "Uninstalling...") else appText("G? nhi?u", "Uninstall selected"))
+                    Text(if (isBulkUninstalling) appText("?ang g?...", "Uninstalling...") else appText("G? c?i ??t", "Uninstall"))
                 }
             }
 
@@ -427,8 +427,7 @@ fun AppRiskCard(
                         color = TextPrimary,
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        lineHeight = 19.sp
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
@@ -440,68 +439,70 @@ fun AppRiskCard(
                     )
 
                     Spacer(modifier = Modifier.height(6.dp))
-                    Row(
-                        modifier = Modifier.horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        if (appInfo.isFakeSystemApp) {
-                            StatusBadge(appText("C?nh b?o", "Warning"), StatusHighRisk)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            if (appInfo.isFakeSystemApp) {
+                                StatusBadge(appText("Gi? h? th?ng", "Fake system"), StatusHighRisk)
+                            }
+                            if (appInfo.isSideloaded) {
+                                StatusBadge(appText("Ngu?n l?", "Unknown source"), StatusMediumRisk)
+                            }
+                            if (appInfo.hasNoLauncher) {
+                                StatusBadge(appText("Kh?ng icon", "No icon"), StatusHighRisk)
+                            }
+                            if (appInfo.hasOverlayPermission) {
+                                StatusBadge(appText("V? ??", "Overlay"), StatusMediumRisk)
+                            }
+                            if (appInfo.hasAccessibilityPermission) {
+                                StatusBadge(appText("Tr? n?ng", "Accessibility"), StatusHighRisk)
+                            }
+                            if (appInfo.hasInstallPermission) {
+                                StatusBadge(appText("C?i APK", "APK install"), StatusHighRisk)
+                            }
+                            if (appInfo.hasSmsPermission) {
+                                StatusBadge(appText("SMS", "SMS"), StatusMediumRisk)
+                            }
+                            if (appInfo.hasNotificationListener) {
+                                StatusBadge(appText("Th?ng b?o", "Notifications"), StatusMediumRisk)
+                            }
+                            if (appInfo.hasAdSuspiciousPackage) {
+                                StatusBadge(appText("Package l?", "Odd package"), StatusMediumRisk)
+                            }
+                            if (appInfo.isActiveAdmin) {
+                                StatusBadge(appText("Admin b?t", "Active admin"), StatusHighRisk)
+                            } else if (appInfo.hasDeviceAdminPermission) {
+                                StatusBadge(appText("Admin", "Device admin"), StatusMediumRisk)
+                            }
+                            if (appInfo.hasUsageStatsPermission) {
+                                StatusBadge(appText("Theo d?i app", "Usage access"), StatusMediumRisk)
+                            }
+                            if (appInfo.isRecentlyInstalled) {
+                                StatusBadge(appText("M?i c?i", "Recent"), StatusMediumRisk)
+                            }
                         }
-                        if (appInfo.isSideloaded) {
-                            StatusBadge(appText("Nghi ng?", "Suspicious"), StatusMediumRisk)
-                        }
-                        if (appInfo.hasNoLauncher) {
-                            StatusBadge(appText("C?nh b?o", "Warning"), StatusHighRisk)
-                        }
-                        if (appInfo.hasOverlayPermission) {
-                            StatusBadge(appText("Nghi ng?", "Suspicious"), StatusMediumRisk)
-                        }
-                        if (appInfo.hasAccessibilityPermission) {
-                            StatusBadge(appText("C?nh b?o", "Warning"), StatusHighRisk)
-                        }
-                        if (appInfo.hasInstallPermission) {
-                            StatusBadge(appText("C?nh b?o", "Warning"), StatusHighRisk)
-                        }
-                        if (appInfo.hasSmsPermission) {
-                            StatusBadge(appText("Nghi ng?", "Suspicious"), StatusMediumRisk)
-                        }
-                        if (appInfo.hasNotificationListener) {
-                            StatusBadge(appText("Nghi ng?", "Suspicious"), StatusMediumRisk)
-                        }
-                        if (appInfo.hasAdSuspiciousPackage) {
-                            StatusBadge(appText("Nghi ng?", "Suspicious"), StatusMediumRisk)
-                        }
-                        if (appInfo.isActiveAdmin) {
-                            StatusBadge(appText("C?nh b?o", "Warning"), StatusHighRisk)
-                        } else if (appInfo.hasDeviceAdminPermission) {
-                            StatusBadge(appText("Nghi ng?", "Suspicious"), StatusMediumRisk)
-                        }
-                        if (appInfo.hasUsageStatsPermission) {
-                            StatusBadge(appText("Nghi ng?", "Suspicious"), StatusMediumRisk)
-                        }
-                        if (appInfo.isRecentlyInstalled) {
-                            StatusBadge(appText("Nghi ng?", "Suspicious"), StatusMediumRisk)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(7.dp))
+                                .background(indicatorColor.copy(alpha = 0.12f))
+                                .border(1.dp, indicatorColor.copy(alpha = 0.28f), RoundedCornerShape(7.dp))
+                                .padding(horizontal = 7.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = appText("R\u1ee7i ro ${appInfo.riskScore}%", "Risk ${appInfo.riskScore}%"),
+                                color = indicatorColor,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }
             }
-        }
-
-        Spacer(modifier = Modifier.width(8.dp))
-
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(8.dp))
-                .background(indicatorColor.copy(alpha = 0.15f))
-                .border(1.dp, indicatorColor.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-                .padding(horizontal = 8.dp, vertical = 4.dp)
-        ) {
-            Text(
-                text = appText("?i?m r?i ro: ${appInfo.riskScore}%", "Risk score: ${appInfo.riskScore}%"),
-                color = indicatorColor,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold
-            )
         }
     }
 }

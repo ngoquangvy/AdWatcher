@@ -368,7 +368,7 @@ private fun AppGroupCard(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = appText("L?n cu?i: $lastTime", "Last seen: $lastTime"),
+                        text = appText("Last seen: $lastTime", "Last seen: $lastTime"),
                         color = ElectricCyan,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium,

@@ -50,6 +50,9 @@ private fun dynamicVietnameseText(en: String): String? {
     Regex("^Risk score: (\\d+)%$").matchEntire(en)?.let {
         return "\u0110i\u1ec3m r\u1ee7i ro: ${it.groupValues[1]}%"
     }
+    Regex("^Last seen: (.+)$").matchEntire(en)?.let {
+        return "L\u1ea7n cu\u1ed1i: ${it.groupValues[1]}"
+    }
     Regex("^Dangerous permissions \\((\\d+) found\\):$").matchEntire(en)?.let {
         return "Quy\u1ec1n nguy hi\u1ec3m (${it.groupValues[1]} ph\u00e1t hi\u1ec7n):"
     }
@@ -85,7 +88,7 @@ private val viFallbacks = mapOf(
     "Android will ask you to confirm each uninstall." to "H\u1ec7 th\u1ed1ng s\u1ebd y\u00eau c\u1ea7u x\u00e1c nh\u1eadn g\u1ee1 c\u00e0i \u0111\u1eb7t t\u1eebng app.",
     "Clear" to "B\u1ecf ch\u1ecdn",
     "Uninstalling..." to "\u0110ang g\u1ee1...",
-    "Uninstall selected" to "G\u1ee1 nhi\u1ec1u",
+    "Uninstall selected" to "G\u1ee1 c\u00e0i \u0111\u1eb7t",
     "Clear all logs?" to "X\u00f3a to\u00e0n b\u1ed9 nh\u1eadt k\u00fd?",
     "All popup logs will be permanently deleted and cannot be restored." to "T\u1ea5t c\u1ea3 nh\u1eadt k\u00fd popup s\u1ebd b\u1ecb x\u00f3a v\u0129nh vi\u1ec5n v\u00e0 kh\u00f4ng th\u1ec3 kh\u00f4i ph\u1ee5c.",
     "Cancel" to "H\u1ee7y",
@@ -118,6 +121,18 @@ private val viFallbacks = mapOf(
     "Unknown source" to "Ngu\u1ed3n l\u1ea1",
     "Quick popup" to "Popup nhanh",
     "Browser handoff" to "Qua tr\u00ecnh duy\u1ec7t",
+    "Fake system" to "Gi\u1ea3 h\u1ec7 th\u1ed1ng",
+    "No icon" to "Kh\u00f4ng icon",
+    "Overlay" to "V\u1ebd \u0111\u00e8",
+    "Accessibility" to "Tr\u1ee3 n\u0103ng",
+    "APK install" to "C\u00e0i APK",
+    "SMS" to "SMS",
+    "Notifications" to "Th\u00f4ng b\u00e1o",
+    "Odd package" to "Package l\u1ea1",
+    "Active admin" to "Admin b\u1eadt",
+    "Device admin" to "Admin",
+    "Usage access" to "Theo d\u00f5i app",
+    "Recent" to "M\u1edbi c\u00e0i",
     "Suspicious signs found:" to "D\u1ea5u hi\u1ec7u nghi ng\u1edd ph\u00e1t hi\u1ec7n:",
     "Overlay (SYSTEM_ALERT_WINDOW)" to "V\u1ebd \u0111\u00e8 (SYSTEM_ALERT_WINDOW)",
     "Accessibility (BIND_ACCESSIBILITY_SERVICE)" to "Tr\u1ee3 n\u0103ng (BIND_ACCESSIBILITY_SERVICE)",
@@ -142,6 +157,7 @@ private fun englishRiskReason(reason: String): String {
         reason.contains("Quyền cài đặt ứng dụng") -> "Install permission: can download and install other APK files."
         reason.contains("Không có icon") -> "Hidden icon: the app hides from the launcher, a common adware sign."
         reason.contains("Nguồn không xác định") -> "Unknown source: installed from an APK outside trusted app stores."
+        reason.contains("App tài chính/ngân hàng từ nguồn không rõ") -> "Financial/banking-like app from an unknown source: this is risky unless installed from a trusted app store."
         reason.contains("Quyền đọc/tin nhắn") -> "SMS permission: may read OTP or banking verification messages."
         reason.contains("Tự khởi chạy") -> "Auto-start: can run after reboot and keep ad services alive."
         reason.contains("Quyền đọc thông báo") -> "Notification access: may read or interact with notifications, including OTP messages."

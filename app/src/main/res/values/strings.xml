@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">AdWatcher</string>
+    <string name="accessibility_service_description">Detects screen-blocking popups from other apps and helps keep AdWatcher visible while you review suspicious apps. AdWatcher does not type, tap, or control other apps for you.</string>
 </resources>

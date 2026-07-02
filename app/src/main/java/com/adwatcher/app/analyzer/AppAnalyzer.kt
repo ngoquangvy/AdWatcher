@@ -169,6 +169,26 @@ class AppAnalyzer(private val context: Context) {
         return trustedInstallerPrefixes.any { prefix -> installerPackageName.startsWith(prefix) }
     }
 
+    private fun financialAppLikelihood(packageName: String, appLabel: String): Int {
+        val pkg = packageName.lowercase()
+        val label = appLabel.lowercase()
+        var score = 0
+        val strongTokens = listOf(
+            "bank", "banking", "mobilebanking", "finance", "financial", "credit union",
+            "securities", "brokerage", "investment", "trading"
+        )
+        val weakTokens = listOf(
+            "wallet", "pay", "payment", "loan", "cash", "credit", "debit", "card"
+        )
+        if (strongTokens.any { token -> label.contains(token) || pkg.contains(token.replace(" ", "")) }) {
+            score += 35
+        }
+        if (weakTokens.any { token -> label.contains(token) || pkg.contains(token.replace(" ", "")) }) {
+            score += 15
+        }
+        return score.coerceIn(0, 100)
+    }
+
     /**
      * Scans all installed applications and returns ONLY suspicious (non-trusted) apps
      * sorted by risk score. Trusted apps are excluded from the results entirely
@@ -281,6 +301,8 @@ class AppAnalyzer(private val context: Context) {
                             labelLower.contains("smart tutor") ||
                             labelLower.contains("smarttutor")
                     )
+            val financialLikelihood = financialAppLikelihood(packageName, appLabel)
+            val isLikelyFinancialApp = financialLikelihood >= 50
             val isSideloaded = !isSystem && !isTrustedPrefix && !isTrustedInstallSource(installSource)
             val isBrandMimicWithBadSource = (isSuspiciousBrandLabel || isSuspiciousBrandPackage) && !isTrustedInstallSource(installSource)
 
@@ -304,6 +326,9 @@ class AppAnalyzer(private val context: Context) {
             if (isSamsungRemoteSupportApp) {
                 score -= 15
                 reasons.add("Samsung Smart Tutor: Ứng dụng hỗ trợ từ xa do Samsung phân phối. Quyền mạnh là bình thường cho chức năng hỗ trợ, nhưng chỉ nên dùng khi bạn cần hỗ trợ.")
+            }
+            if (isLikelyFinancialApp && isTrustedInstallSource(installSource) && popupCount == 0) {
+                score -= 20
             }
 
             if (isFakeSystem) {
@@ -338,6 +363,10 @@ class AppAnalyzer(private val context: Context) {
             if (isSideloaded) {
                 score += 20
                 reasons.add("Nguồn không xác định: Được cài bằng file APK bên ngoài, không qua kiểm duyệt của Google Play.")
+            }
+            if (isLikelyFinancialApp && !isTrustedInstallSource(installSource)) {
+                score += 30
+                reasons.add("App tài chính/ngân hàng từ nguồn không rõ: App giống ngân hàng hoặc tài chính nhưng không được cài từ nguồn tin cậy.")
             }
             if (hasSms) {
                 score += 18
@@ -452,6 +481,9 @@ class AppAnalyzer(private val context: Context) {
             }
             if (isSamsungRemoteSupportApp && popupCount == 0) {
                 score = minOf(score, 45)
+            }
+            if (isLikelyFinancialApp && isTrustedInstallSource(installSource) && popupCount == 0) {
+                score = minOf(score, 25)
             }
 
             // Cap score between 0 and 100
